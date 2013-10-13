@@ -1,10 +1,11 @@
 set(SRC 
-    main.c connection-manager.c protocol.c connection.c
+	main.c connection-manager.c protocol.c connection.c handles.c im-manager.c
     )
 
 include_directories(
     ${PROJECT_BINARY_DIR}
     ${TP_GLIB_INCLUDE_DIRS}
+	/usr/local/include/lwqq
     )
 
 add_executable(telepathy-lwqq ${SRC})

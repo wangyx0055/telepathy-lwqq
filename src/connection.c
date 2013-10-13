@@ -22,6 +22,7 @@
 #include "config.h"
 
 #include "connection.h"
+#include "im-manager.h"
 
 #include <string.h>
 #include <time.h>
@@ -38,6 +39,7 @@
 #include <telepathy-glib/gtypes.h>
 #include <telepathy-glib/util.h>
 
+#include <lwqq.h>
 
 enum {
 	PROP_USERNAME = 1,
@@ -47,8 +49,12 @@ enum {
 
 
 struct _LwqqConnectionPrivate {
+	LwqqClient* lc;
     char* username;
     char* password;
+
+	/* so we can pop up a SASL channel asking for the password */
+	TpSimplePasswordManager *password_manager;
 };
 
 static const gchar * interfaces_always_present[] = {
@@ -66,10 +72,94 @@ const gchar * const *lwqq_connection_get_implemented_interfaces (void) {
 
 
 static void _iface_create_handle_repos(TpBaseConnection *self, TpHandleRepoIface **repos) {
-	for (int i = 0; i < NUM_TP_HANDLE_TYPES; i++)
+	int i;
+	for (i = 0; i < NUM_TP_HANDLE_TYPES; i++)
 		repos[i] = NULL;
 
 	idle_handle_repos_init(repos);
+}
+
+
+static GPtrArray *_iface_create_channel_managers(TpBaseConnection *base) {
+	LwqqConnection *self = LWQQ_CONNECTION (base);
+	LwqqConnectionPrivate *priv = self->priv;
+	GPtrArray *managers = g_ptr_array_sized_new(1);
+	GObject *manager;
+
+	manager = g_object_new(LWQQ_TYPE_IM_MANAGER, "connection", self, NULL);
+	g_ptr_array_add(managers, manager);
+
+	/*
+	manager = g_object_new(LWQQ_TYPE_MUC_MANAGER, "connection", self, NULL);
+	g_ptr_array_add(managers, manager);
+	*/
+
+	priv->password_manager = tp_simple_password_manager_new(base);
+	g_ptr_array_add(managers, priv->password_manager);
+
+	/*
+	manager = g_object_new(IDLE_TYPE_ROOMLIST_MANAGER, "connection", self, NULL);
+	g_ptr_array_add(managers, manager);
+
+	priv->tls_manager = g_object_new (IDLE_TYPE_SERVER_TLS_MANAGER,
+		"connection", self,
+                NULL);
+	g_ptr_array_add(managers, priv->tls_manager);
+	*/
+
+	return managers;
+}
+
+
+static void _iface_shut_down(TpBaseConnection *base) {
+#if 0
+	IdleConnection *self = IDLE_CONNECTION (base);
+	IdleConnectionPrivate *priv = self->priv;
+
+	if (priv->quitting)
+		return;
+
+	/* we never got around to actually creating the connection
+	 * iface object because we were still trying to connect, so
+	 * don't try to send any traffic down it */
+	if (priv->conn == NULL) {
+		g_idle_add(_finish_shutdown_idle_func, self);
+	} else if (!priv->sconn_connected) {
+		IDLE_DEBUG("cancelling connection");
+		g_cancellable_cancel (priv->connect_cancellable);
+	} else {
+		idle_server_connection_disconnect_async(priv->conn, NULL, NULL, NULL);
+	}
+#endif
+}
+
+
+/******START CONNECTION TO SERVER*****************/
+static gboolean _iface_start_connecting(TpBaseConnection *self, GError **error) {
+	LwqqConnection *conn = LWQQ_CONNECTION(self);
+	LwqqConnectionPrivate *priv = conn->priv;
+
+	//g_assert(priv->nickname != NULL);
+
+	if (priv->lc != NULL) {
+		//verbose connection already open
+		g_set_error(error, TP_ERROR, TP_ERROR_NOT_AVAILABLE, "connection already open!");
+		return FALSE;
+	}
+
+	/*
+	if (priv->password_prompt) {
+		tp_simple_password_manager_prompt_async(priv->password_manager, _password_prompt_cb, conn);
+	} else {
+		//_start_connecting_continue(conn);
+	}
+	*/
+
+	LwqqClient* lc = lwqq_client_new(priv->username,priv->password);
+	lwqq_log_set_level(4);
+	lwqq_login(lc, LWQQ_STATUS_ONLINE, NULL);
+	priv->lc = lc;
+	return TRUE;
 }
 
 //=================CONNECTION CLASS DEFINE======================//
@@ -141,16 +231,16 @@ static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
 	object_class->finalize = lwqq_connection_finalize;
     */
 
-    /*
 	parent_class->create_handle_repos = _iface_create_handle_repos;
-	parent_class->get_unique_connection_name = _iface_get_unique_connection_name;
 	parent_class->create_channel_factories = NULL;
 	parent_class->create_channel_managers = _iface_create_channel_managers;
+	parent_class->shut_down = _iface_shut_down;
+	parent_class->start_connecting = _iface_start_connecting;
+    /*
+	parent_class->get_unique_connection_name = _iface_get_unique_connection_name;
 	parent_class->connecting = NULL;
 	parent_class->connected = NULL;
 	parent_class->disconnected = _iface_disconnected;
-	parent_class->shut_down = _iface_shut_down;
-	parent_class->start_connecting = _iface_start_connecting;
 	parent_class->interfaces_always_present = interfaces_always_present;
     */
 	param_spec = g_param_spec_string("username", "User name", "The username of the user connecting to IRC", NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
