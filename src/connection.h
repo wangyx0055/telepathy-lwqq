@@ -46,6 +46,8 @@ struct _LwqqConnection {
 	GQueue *contact_info_requests;
     LwqqContactList* contact_list;
 
+	LwqqClient* lc;
+
 	LwqqConnectionPrivate *priv;
 };
 
@@ -72,6 +74,8 @@ void lwqq_connection_send(LwqqConnection *conn, const gchar *msg);
 gsize lwqq_connection_get_max_message_length(LwqqConnection *conn);
 */
 const gchar * const *lwqq_connection_get_implemented_interfaces (void);
+const gchar * lwqq_connection_handle_inspect (LwqqConnection *conn,
+        TpHandleType handle_type, TpHandle handle);
 
 G_END_DECLS
 

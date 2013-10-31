@@ -18,6 +18,22 @@ struct _LwqqContactListPrivate {
 
 };
 
+
+typedef struct _PublishRequestData PublishRequestData;
+
+/** PublishRequestData:
+ *
+ *  Keeps track of the relevant callbacks to approve or deny a contact's publish
+ *  request.
+ */
+struct _PublishRequestData {
+    LwqqContactList *self;
+    TpHandle handle;
+    gchar *message;
+
+    gpointer data;
+};
+
 void
 lwqq_contact_list_request_subscription (LwqqContactList *self,
     TpHandle handle,
@@ -177,7 +193,107 @@ lwqq_contact_list_finalize (GObject *object)
     G_OBJECT_CLASS (lwqq_contact_list_parent_class)->finalize (object);
 }
 
+static TpHandleSet* contact_list_dup_contacts(TpBaseContactList* base)
+{
+    LwqqContactList *self = LWQQ_CONTACT_LIST (base);
+    TpBaseConnection *base_conn = TP_BASE_CONNECTION (self->priv->conn);
+    TpHandleRepoIface *contact_repo = tp_base_connection_get_handles (base_conn,
+            TP_HANDLE_TYPE_CONTACT);
+    LwqqClient* lc = self->priv->conn->lc;
+    /* The list initially contains anyone we're definitely publishing to.
+     * Because libpurple, that's only people whose request we accepted during
+     * this session :-( */
+    TpHandleSet *handles = tp_handle_set_copy (self->priv->publishing_to);
+    /* Also include anyone on our buddy list */
+    LwqqBuddy* buddy;
+    LIST_FOREACH(buddy, &lc->friends, entries){
+        TpHandle handle = tp_handle_ensure (contact_repo,
+                buddy->uin, NULL, NULL);
+
+        if (G_LIKELY (handle != 0))
+        {
+            tp_handle_set_add (handles, handle);
+        }
+
+    }
+
+    /* Also include anyone with an outstanding request */
+#if 0
+    GHashTableIter hash_iter;
+    gpointer k;
+    g_hash_table_iter_init (&hash_iter, self->priv->pending_publish_requests);
+
+    while (g_hash_table_iter_next (&hash_iter, &k, NULL))
+    {
+        tp_handle_set_add (handles, GPOINTER_TO_UINT (k));
+    }
+#endif
+
+    return handles;
+}
+
+
 static void
+contact_list_dup_states (TpBaseContactList *cl,
+    TpHandle contact,
+    TpSubscriptionState *subscribe_out,
+    TpSubscriptionState *publish_out,
+    gchar **publish_request_out)
+{
+    LwqqContactList *self = LWQQ_CONTACT_LIST (cl);
+    const gchar *bname = lwqq_connection_handle_inspect (self->priv->conn,
+            TP_HANDLE_TYPE_CONTACT, contact);
+    LwqqClient* lc = self->priv->conn->lc;
+    LwqqBuddy* buddy = lc->find_buddy_by_uin(lc,bname);
+    TpSubscriptionState pub, sub;
+    /*PublishRequestData *pub_req = g_hash_table_lookup (
+      self->priv->pending_publish_requests, GUINT_TO_POINTER (contact));
+      */
+
+    if (publish_request_out != NULL)
+        *publish_request_out = NULL;
+
+    if (buddy != NULL)
+    {
+        /* Well, it's on the contact list. Are we subscribed to its presence?
+         * Who knows? Let's assume we are. */
+        sub = TP_SUBSCRIPTION_STATE_YES;
+    }
+    else
+    {
+        /* We're definitely not subscribed. */
+        sub = TP_SUBSCRIPTION_STATE_NO;
+    }
+
+    /*if (pub_req != NULL)
+      {
+      pub = TP_SUBSCRIPTION_STATE_ASK;
+
+      if (publish_request_out != NULL)
+     *publish_request_out = g_strdup (pub_req->message);
+     }
+     else if (tp_handle_set_is_member (self->priv->publishing_to, contact))
+     {
+     pub = TP_SUBSCRIPTION_STATE_YES;
+     }
+     else if (tp_handle_set_is_member (self->priv->not_publishing_to, contact))
+     {
+     pub = TP_SUBSCRIPTION_STATE_NO;
+     }
+     else
+     {
+     pub = TP_SUBSCRIPTION_STATE_UNKNOWN;
+     }
+     */
+
+    if (subscribe_out != NULL)
+        *subscribe_out = sub;
+
+    if (publish_out != NULL)
+        *publish_out = pub;
+}
+
+    static void
 lwqq_contact_list_class_init (LwqqContactListClass *klass)
 {
     GObjectClass *object_class = G_OBJECT_CLASS (klass);
@@ -188,8 +304,8 @@ lwqq_contact_list_class_init (LwqqContactListClass *klass)
     object_class->dispose = lwqq_contact_list_dispose;
     object_class->finalize = lwqq_contact_list_finalize;
 
-    //parent_class->dup_contacts = lwqq_contact_list_dup_contacts;
-    //parent_class->dup_states = lwqq_contact_list_dup_states;
+    parent_class->dup_contacts = contact_list_dup_contacts;
+    parent_class->dup_states = contact_list_dup_states;
     /* we assume the contact list does persist, which is the default */
 
     g_type_class_add_private (object_class,
@@ -225,7 +341,8 @@ lwqq_contact_list_add_buddy(LwqqClient* lc,LwqqBuddy* buddy)
         base_conn, TP_HANDLE_TYPE_CONTACT);
     const char* name = buddy->uin;
     TpHandle handle = tp_handle_ensure (contact_repo, name, NULL, NULL);
-    LwqqFriendCategory* cate = lwqq_category_find_by_id(lc, buddy->cate_index);
+    LwqqFriendCategory* cate = NULL;
+    cate = lwqq_category_find_by_id(lc, buddy->cate_index);
     const char *group_name = cate->name;
 
     tp_base_contact_list_one_contact_changed (

@@ -8,6 +8,7 @@ G_BEGIN_DECLS
 
 typedef struct _LwqqIMManager LwqqIMManager;
 typedef struct _LwqqIMManagerClass LwqqIMManagerClass;
+typedef struct _LwqqIMManagerPrivate LwqqIMManagerPrivate;
 
 struct _LwqqIMManagerClass {
 	GObjectClass parent_class;
@@ -15,6 +16,8 @@ struct _LwqqIMManagerClass {
 
 struct _LwqqIMManager {
 	GObject parent;
+
+    LwqqIMManagerPrivate* priv;
 };
 
 GType lwqq_im_manager_get_type (void);

@@ -51,7 +51,6 @@ enum {
 
 
 struct _LwqqConnectionPrivate {
-	LwqqClient* lc;
     char* username;
     char* password;
 
@@ -63,9 +62,20 @@ static const gchar * interfaces_always_present[] = {
 	/*TP_IFACE_CONNECTION_INTERFACE_ALIASING,
 	TP_IFACE_CONNECTION_INTERFACE_CONTACT_INFO,
 	LWQQ_IFACE_CONNECTION_INTERFACE_RENAMING,
-	TP_IFACE_CONNECTION_INTERFACE_REQUESTS,
-	TP_IFACE_CONNECTION_INTERFACE_CONTACTS,*/
+	TP_IFACE_CONNECTION_INTERFACE_REQUESTS,*/
+	TP_IFACE_CONNECTION_INTERFACE_CONTACTS,
 	NULL};
+
+
+G_DEFINE_TYPE_WITH_CODE(LwqqConnection,
+    lwqq_connection,
+    TP_TYPE_BASE_CONNECTION,
+    G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_CONTACTS,
+        tp_contacts_mixin_iface_init);
+    G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_CONTACT_LIST,
+        tp_base_contact_list_mixin_list_iface_init)
+    );
+
 
 const gchar * const *lwqq_connection_get_implemented_interfaces (void) {
 	/* we don't have any conditionally-implemented interfaces yet */
@@ -80,7 +90,7 @@ _contact_normalize (TpHandleRepoIface *repo,
                     GError **error)
 {
     LwqqConnection *conn = LWQQ_CONNECTION (context);
-    LwqqClient* lc = conn->priv->lc;
+    LwqqClient* lc = conn->lc;
     if(lc==NULL) return g_strdup(id);
     return g_strdup (lc->myself->nick);
 }
@@ -154,9 +164,13 @@ static void login_stage_3(LwqqClient* lc)
 {
     LwqqConnection* conn = lc->data;
     LwqqBuddy* buddy;
-    LIST_FOREACH(buddy, &lc->friends, entries){
+    tp_base_contact_list_set_list_received(&conn->contact_list->parent);
+    tp_base_connection_change_status(&conn->parent,
+            TP_CONNECTION_STATUS_CONNECTED,
+            TP_CONNECTION_STATUS_REASON_REQUESTED);
+    /*LIST_FOREACH(buddy, &lc->friends, entries){
         lwqq_contact_list_add_buddy(lc, buddy);
-    }
+    }*/
     /*qq_account* ac = lwqq_client_userdata(lc);
 
     lwdb_userdb_flush_buddies(ac->db, 5,5);
@@ -276,8 +290,6 @@ static void login_stage_1(LwqqClient* lc,LwqqErrorCode err)
 	LwqqAsyncEvent* ev = lwqq_info_get_friends_info(lc, lwqq_util_hashQ,NULL);
 	lwqq_async_add_event_listener(ev, _C_(2p,friends_valid_hash,ev,lwqq_util_hashQ));
 
-    tp_base_connection_set_self_handle(&conn->parent, 1);
-    tp_base_connection_change_status(&conn->parent, TP_CONNECTION_STATUS_CONNECTED, TP_CONNECTION_STATUS_REASON_REQUESTED);
     return ;
 }
 
@@ -299,7 +311,7 @@ static gboolean _iface_start_connecting(TpBaseConnection *self, GError **error) 
 
 	//g_assert(priv->nickname != NULL);
 
-	if (priv->lc != NULL) {
+	if (conn->lc != NULL) {
 		//verbose connection already open
 		g_set_error(error, TP_ERROR, TP_ERROR_NOT_AVAILABLE, "connection already open!");
 		return FALSE;
@@ -322,13 +334,11 @@ static gboolean _iface_start_connecting(TpBaseConnection *self, GError **error) 
     lc->action = &lwqq_global_action;
     lc->data = conn;
 	lwqq_login(lc, LWQQ_STATUS_ONLINE, NULL);
-	priv->lc = lc;
+	conn->lc = lc;
 	return TRUE;
 }
 
 //=================CONNECTION CLASS DEFINE======================//
-
-G_DEFINE_TYPE (LwqqConnection, lwqq_connection, TP_TYPE_BASE_CONNECTION)
 
 static void lwqq_connection_init(LwqqConnection *obj) {
 	LwqqConnectionPrivate *priv = G_TYPE_INSTANCE_GET_PRIVATE (obj, LWQQ_TYPE_CONNECTION, LwqqConnectionPrivate);
@@ -342,9 +352,31 @@ static void lwqq_connection_init(LwqqConnection *obj) {
 	tp_base_connection_register_with_contacts_mixin ((TpBaseConnection *) obj);
     */
 }
-static void lwqq_connection_constructed(GObject* obj)
+static GObject *
+lwqq_connection_constructor (GType type,
+                             guint n_construct_properties,
+                             GObjectConstructParam *construct_params)
 {
+    LwqqConnection *self = LWQQ_CONNECTION (
+            G_OBJECT_CLASS (lwqq_connection_parent_class)->constructor (
+                type, n_construct_properties, construct_params));
+    TpBaseConnection *base_conn = TP_BASE_CONNECTION (self);
+    GObject *object = (GObject *) self;
+    LwqqConnectionPrivate *priv = self->priv;
+
+   // DEBUG ("Post-construction: (LwqqConnection *)%p", self);
+
+    //priv->dispose_has_run = FALSE;
+
+    //priv->disconnecting = FALSE;
+
+    tp_contacts_mixin_init (object,
+        G_STRUCT_OFFSET (LwqqConnection, contacts));
+    tp_base_connection_register_with_contacts_mixin (base_conn);
+    tp_base_contact_list_mixin_register_with_contacts_mixin (base_conn);
+    return self;
 }
+
 static void lwqq_connection_set_property(GObject *obj, guint prop_id, const GValue *value, GParamSpec *pspec) {
 	LwqqConnection *self = LWQQ_CONNECTION(obj);
 	LwqqConnectionPrivate *priv = self->priv;
@@ -387,7 +419,7 @@ static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
 
 	g_type_class_add_private(klass, sizeof(LwqqConnectionPrivate));
 
-	object_class->constructed = lwqq_connection_constructed;
+	object_class->constructor = lwqq_connection_constructor;
 	object_class->set_property = lwqq_connection_set_property;
 	object_class->get_property = lwqq_connection_get_property;
     /*
@@ -457,4 +489,18 @@ static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
 		flush_queue_faster = TRUE;
 #endif
 }
+
+
 //-----------------CONNECTION CLASS DEFINE----------------------//
+
+const gchar *
+lwqq_connection_handle_inspect (LwqqConnection *conn,
+                                TpHandleType handle_type,
+                                TpHandle handle)
+{
+    TpBaseConnection *base_conn = TP_BASE_CONNECTION (conn);
+    TpHandleRepoIface *handle_repo =
+        tp_base_connection_get_handles (base_conn, handle_type);
+    g_assert (tp_handle_is_valid (handle_repo, handle, NULL));
+    return tp_handle_inspect (handle_repo, handle);
+}
