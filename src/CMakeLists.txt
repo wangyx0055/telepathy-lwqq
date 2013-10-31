@@ -1,5 +1,11 @@
 set(SRC 
-	main.c connection-manager.c protocol.c connection.c handles.c im-manager.c
+    main.c 
+    connection.c 
+    connection-manager.c 
+    contact-list.c
+    protocol.c 
+    handles.c 
+    im-manager.c
     )
 
 include_directories(

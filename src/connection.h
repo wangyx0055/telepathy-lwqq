@@ -26,9 +26,7 @@
 #include <telepathy-glib/handle.h>
 #include <telepathy-glib/contacts-mixin.h>
 
-//#include "lwqq-parser.h"
-
-//#define IRC_MSG_MAXLEN 510
+#include "contact-list.h"
 
 G_BEGIN_DECLS
 
@@ -38,7 +36,7 @@ typedef struct _LwqqConnectionPrivate LwqqConnectionPrivate;
 
 struct _LwqqConnectionClass {
 	TpBaseConnectionClass parent_class;
-	TpContactsMixinClass contacts;
+	TpContactsMixinClass contacts_class;
 };
 
 struct _LwqqConnection {
@@ -46,6 +44,8 @@ struct _LwqqConnection {
 	TpContactsMixin contacts;
 	//LwqqParser *parser;
 	GQueue *contact_info_requests;
+    LwqqContactList* contact_list;
+
 	LwqqConnectionPrivate *priv;
 };
 

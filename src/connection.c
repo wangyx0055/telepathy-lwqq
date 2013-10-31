@@ -23,6 +23,7 @@
 
 #include "connection.h"
 #include "im-manager.h"
+#include "contact-list.h"
 
 #include <string.h>
 #include <time.h>
@@ -34,12 +35,13 @@
 #include <telepathy-glib/errors.h>
 #include <telepathy-glib/interfaces.h>
 #include <telepathy-glib/simple-password-manager.h>
+#include <telepathy-glib/handle-repo-dynamic.h>
 #include <telepathy-glib/svc-connection.h>
 #include <telepathy-glib/channel-manager.h>
 #include <telepathy-glib/gtypes.h>
 #include <telepathy-glib/util.h>
 
-#include <lwqq.h>
+#include <lwqq/lwqq.h>
 
 enum {
 	PROP_USERNAME = 1,
@@ -71,12 +73,24 @@ const gchar * const *lwqq_connection_get_implemented_interfaces (void) {
 }
 
 
-static void _iface_create_handle_repos(TpBaseConnection *self, TpHandleRepoIface **repos) {
-	int i;
-	for (i = 0; i < NUM_TP_HANDLE_TYPES; i++)
-		repos[i] = NULL;
+static gchar*
+_contact_normalize (TpHandleRepoIface *repo,
+                    const gchar *id,
+                    gpointer context,
+                    GError **error)
+{
+    LwqqConnection *conn = LWQQ_CONNECTION (context);
+    LwqqClient* lc = conn->priv->lc;
+    if(lc==NULL) return g_strdup(id);
+    return g_strdup (lc->myself->nick);
+}
 
-	idle_handle_repos_init(repos);
+static void _iface_create_handle_repos(TpBaseConnection *self,
+        TpHandleRepoIface *repos[NUM_TP_HANDLE_TYPES]) 
+{
+    repos[TP_HANDLE_TYPE_CONTACT] =
+        tp_dynamic_handle_repo_new (TP_HANDLE_TYPE_CONTACT, _contact_normalize,
+                                    self);
 }
 
 
@@ -96,6 +110,9 @@ static GPtrArray *_iface_create_channel_managers(TpBaseConnection *base) {
 
 	priv->password_manager = tp_simple_password_manager_new(base);
 	g_ptr_array_add(managers, priv->password_manager);
+    self->contact_list =
+        LWQQ_CONTACT_LIST(g_object_new(LWQQ_TYPE_CONTACT_LIST,"connection",self,NULL));
+    g_ptr_array_add(managers, self->contact_list);
 
 	/*
 	manager = g_object_new(IDLE_TYPE_ROOMLIST_MANAGER, "connection", self, NULL);
@@ -133,11 +150,152 @@ static void _iface_shut_down(TpBaseConnection *base) {
 #endif
 }
 
+static void login_stage_3(LwqqClient* lc)
+{
+    LwqqConnection* conn = lc->data;
+    LwqqBuddy* buddy;
+    LIST_FOREACH(buddy, &lc->friends, entries){
+        lwqq_contact_list_add_buddy(lc, buddy);
+    }
+    /*qq_account* ac = lwqq_client_userdata(lc);
+
+    lwdb_userdb_flush_buddies(ac->db, 5,5);
+    lwdb_userdb_flush_groups(ac->db, 1,10);
+
+    if(ac->flag&QQ_USE_QQNUM){
+        lwdb_userdb_query_qqnumbers(ac->db,lc);
+    }
+
+    //make sure all qqnumber is setup,then make state connected
+    purple_connection_set_state(purple_account_get_connection(ac->account),PURPLE_CONNECTED);
+
+    if(!purple_account_get_alias(ac->account))
+        purple_account_set_alias(ac->account,lc->myself->nick);
+    if(purple_buddy_icons_find_account_icon(ac->account)==NULL){
+        LwqqAsyncEvent* ev=lwqq_info_get_friend_avatar(lc,lc->myself);
+        lwqq_async_add_event_listener(ev,_C_(2p,friend_avatar,ac,lc->myself));
+    }
+
+    LwqqAsyncEvent* ev = NULL;
+
+    //we must put buddy and group clean before any add operation.
+    GSList* ptr = purple_blist_get_buddies();
+    while(ptr){
+        PurpleBuddy* buddy = ptr->data;
+        if(buddy->account == ac->account){
+            const char* qqnum = purple_buddy_get_name(buddy);
+            //if it isn't a qqnumber,we should delete it whatever.
+            if(lwqq_buddy_find_buddy_by_qqnumber(lc,qqnum)==NULL){
+                purple_blist_remove_buddy(buddy);
+            }
+        }
+        ptr = ptr->next;
+    }
+
+    //clean extra duplicated node
+    all_reset(ac,RESET_GROUP_SOFT|RESET_DISCU_SOFT);
+
+    LwqqAsyncEvset* set = lwqq_async_evset_new();
+    
+    LwqqBuddy* buddy;
+    LIST_FOREACH(buddy,&lc->friends,entries) {
+        lwdb_userdb_query_buddy(ac->db, buddy);
+        if((ac->flag& QQ_USE_QQNUM)&& ! buddy->qqnumber){
+            ev = lwqq_info_get_friend_qqnumber(lc,buddy);
+            lwqq_async_evset_add_event(set, ev);
+        }
+        if(buddy->last_modify == 0 || buddy->last_modify == -1) {
+            ev = lwqq_info_get_single_long_nick(lc, buddy);
+            lwqq_async_evset_add_event(set, ev);
+            ev = lwqq_info_get_level(lc, buddy);
+            lwqq_async_evset_add_event(set, ev);
+            //if buddy is unknow we should update avatar in friend_come
+            //for better speed in first load
+            if(buddy->last_modify == LWQQ_LAST_MODIFY_RESET){
+                ev = lwqq_info_get_friend_avatar(lc,buddy);
+                lwqq_async_evset_add_event(set, ev);
+            }
+        }
+        if(buddy->last_modify != -1 && buddy->last_modify != 0)
+            friend_come(lc,buddy);
+    }
+    //friend_come(lc,create_system_buddy(lc));
+    
+    LwqqGroup* group;
+    LIST_FOREACH(group,&lc->groups,entries) {
+        //LwqqAsyncEvset* set = NULL;
+        lwdb_userdb_query_group(ac->db, group);
+        if((ac->flag && QQ_USE_QQNUM)&& ! group->account){
+            ev = lwqq_info_get_group_qqnumber(lc,group);
+            lwqq_async_evset_add_event(set, ev);
+        }
+        if(group->last_modify == -1 || group->last_modify == 0){
+            ev = lwqq_info_get_group_memo(lc, group);
+            lwqq_async_evset_add_event(set, ev);
+        }
+        //because group avatar less changed.
+        //so we dont reload it.
+        if(group->last_modify != -1 && group->last_modify != 0)
+            group_come(lc,group);
+    }
+
+    LwqqGroup* discu;
+    LIST_FOREACH(discu,&lc->discus,entries){
+        if(!discu->account||discu->last_modify==-1){
+            ev = lwqq_info_get_discu_detail_info(lc, discu);
+            lwqq_async_evset_add_event(set, ev);
+        }
+        if(discu->last_modify!=-1)
+            discu_come(lc,discu);
+    }
+    lwqq_async_add_evset_listener(set, _C_(p,login_stage_f,lc));
+
+
+    ac->state = LOAD_COMPLETED;
+
+    LwqqPollOption flags = POLL_AUTO_DOWN_DISCU_PIC|POLL_AUTO_DOWN_GROUP_PIC|POLL_AUTO_DOWN_BUDDY_PIC;
+    if(ac->flag& REMOVE_DUPLICATED_MSG)
+        flags |= POLL_REMOVE_DUPLICATED_MSG;
+    if(ac->flag& NOT_DOWNLOAD_GROUP_PIC)
+        flags &= ~POLL_AUTO_DOWN_GROUP_PIC;
+
+    lwqq_msglist_poll(lc->msg_list, flags);*/
+}
+
+static void friends_valid_hash(LwqqAsyncEvent* ev,LwqqHashFunc last_hash)
+{
+    LwqqClient* lc = ev->lc;
+    LwqqConnection* conn = lc->data;
+    login_stage_3(lc);
+}
+static void login_stage_1(LwqqClient* lc,LwqqErrorCode err)
+{
+    if(!lwqq_client_valid(lc)) return;
+    LwqqConnection* conn = lc->data;
+
+	LwqqAsyncEvent* ev = lwqq_info_get_friends_info(lc, lwqq_util_hashQ,NULL);
+	lwqq_async_add_event_listener(ev, _C_(2p,friends_valid_hash,ev,lwqq_util_hashQ));
+
+    tp_base_connection_set_self_handle(&conn->parent, 1);
+    tp_base_connection_change_status(&conn->parent, TP_CONNECTION_STATUS_CONNECTED, TP_CONNECTION_STATUS_REASON_REQUESTED);
+    return ;
+}
+
+static LwqqAction lwqq_global_action = {
+    .login_complete = login_stage_1
+};
 
 /******START CONNECTION TO SERVER*****************/
 static gboolean _iface_start_connecting(TpBaseConnection *self, GError **error) {
 	LwqqConnection *conn = LWQQ_CONNECTION(self);
 	LwqqConnectionPrivate *priv = conn->priv;
+    TpHandleRepoIface *contact_handles =
+        tp_base_connection_get_handles (self, TP_HANDLE_TYPE_CONTACT);
+
+    self->self_handle = tp_handle_ensure (contact_handles,
+        priv->username, NULL, NULL);
+    if (!self->self_handle)
+        return FALSE;
 
 	//g_assert(priv->nickname != NULL);
 
@@ -155,8 +313,14 @@ static gboolean _iface_start_connecting(TpBaseConnection *self, GError **error) 
 	}
 	*/
 
+
+    tp_base_connection_change_status(self, TP_CONNECTION_STATUS_CONNECTING,
+                                     TP_CONNECTION_STATUS_REASON_REQUESTED);
+
 	LwqqClient* lc = lwqq_client_new(priv->username,priv->password);
 	lwqq_log_set_level(4);
+    lc->action = &lwqq_global_action;
+    lc->data = conn;
 	lwqq_login(lc, LWQQ_STATUS_ONLINE, NULL);
 	priv->lc = lc;
 	return TRUE;
