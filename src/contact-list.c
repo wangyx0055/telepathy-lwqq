@@ -204,6 +204,7 @@ static TpHandleSet* contact_list_dup_contacts(TpBaseContactList* base)
      * Because libpurple, that's only people whose request we accepted during
      * this session :-( */
     TpHandleSet *handles = tp_handle_set_copy (self->priv->publishing_to);
+    tp_handle_set_add(handles,tp_handle_ensure(contact_repo, "123", NULL, NULL));
     /* Also include anyone on our buddy list */
     LwqqBuddy* buddy;
     LIST_FOREACH(buddy, &lc->friends, entries){

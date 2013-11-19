@@ -44,7 +44,8 @@ int main(int argc,char **argv)
 
     tp_debug_divert_messages(g_getenv("LWQQ_LOGFILE"));
     tlqq_debug_init();
-    lwqq_log_redirect(to_debug_sender);
+    //lwqq_log_redirect(to_debug_sender);
+    lwqq_log_set_level(3);
 
     ret = tp_run_connection_manager(UI_ID,PACKAGE_VERSION,get_cm,argc,argv);
 
