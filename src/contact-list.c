@@ -106,6 +106,56 @@ contact_list_authorize_publication_async (TpBaseContactList *cl,
       user_data, contact_list_authorize_publication_async);
 }
 
+void
+contact_list_remove_contact (LwqqContactList *self,
+    TpHandle handle)
+{
+#if 0
+  PurpleAccount *account = self->priv->conn->account;
+  const gchar *bname = haze_connection_handle_inspect (self->priv->conn,
+      TP_HANDLE_TYPE_CONTACT, handle);
+  GSList *buddies, *l;
+
+  buddies = purple_find_buddies (account, bname);
+  /* buddies may be NULL, but that's a perfectly reasonable GSList */
+
+  /* Removing a buddy from subscribe entails removing it from all
+   * groups since you can't have a buddy without groups in libpurple.
+   */
+  for (l = buddies; l != NULL; l = l->next)
+    {
+      PurpleBuddy *buddy = (PurpleBuddy *) l->data;
+      PurpleGroup *group = purple_buddy_get_group (buddy);
+
+      purple_account_remove_buddy (account, buddy, group);
+      purple_blist_remove_buddy (buddy);
+    }
+
+  /* Also decline any publication requests we might have had */
+  haze_contact_list_reject_publish_request (self, handle);
+
+  g_slist_free (buddies);
+#endif
+}
+
+static void 
+contact_list_remove_contacts_async(TpBaseContactList* cl,TpHandleSet*
+        contacts,GAsyncReadyCallback callback,gpointer data)
+{
+
+  LwqqContactList *self = LWQQ_CONTACT_LIST (cl);
+  TpIntsetFastIter iter;
+  TpHandle handle;
+
+  tp_intset_fast_iter_init (&iter, tp_handle_set_peek (contacts));
+
+  while (tp_intset_fast_iter_next (&iter, &handle))
+    contact_list_remove_contact (self, handle);
+
+  tp_simple_async_report_success_in_idle ((GObject *) self, callback,
+      data, contact_list_remove_contacts_async);
+}
+
 static void
 contact_list_mutable_init (TpMutableContactListInterface *vtable)
 {
@@ -114,10 +164,10 @@ contact_list_mutable_init (TpMutableContactListInterface *vtable)
     contact_list_request_subscription_async;
   vtable->authorize_publication_async =
     contact_list_authorize_publication_async;
-  //vtable->remove_contacts_async = lwqq_contact_list_remove_contacts_async;
+  vtable->remove_contacts_async = contact_list_remove_contacts_async;
   /* this is about the best we can do for unsubscribe/unpublish */
-  //vtable->unsubscribe_async = lwqq_contact_list_remove_contacts_async;
-  //vtable->unpublish_async = lwqq_contact_list_remove_contacts_async;
+  vtable->unsubscribe_async = contact_list_remove_contacts_async;
+  vtable->unpublish_async = contact_list_remove_contacts_async;
   //vtable->store_contacts_async = lwqq_contact_list_store_contacts_async;
   /* assume defaults: can change the contact list, and requests use the
    * message */
@@ -136,16 +186,13 @@ G_DEFINE_TYPE_WITH_CODE(LwqqContactList,
       lwqq_contact_list_blockable_init)*/
       )
 
-static GObject *
-lwqq_contact_list_constructor (GType type, guint n_props,
-                               GObjectConstructParam *props)
+static void lwqq_contact_list_constructed(GObject* obj)
 {
-    GObject *obj;
-    LwqqContactList *self;
+    LwqqContactList *self = LWQQ_CONTACT_LIST(obj);
     TpHandleRepoIface *contact_repo;
+    void (*chainup)(GObject* obj) = ((GObjectClass*)lwqq_contact_list_parent_class)->constructed;
 
-    obj = G_OBJECT_CLASS (lwqq_contact_list_parent_class)->
-        constructor (type, n_props, props);
+    if(chainup)chainup(obj);
 
     self = LWQQ_CONTACT_LIST (obj);
 
@@ -163,7 +210,6 @@ lwqq_contact_list_constructor (GType type, guint n_props,
 //    self->priv->pending_publish_requests = g_hash_table_new_full (NULL, NULL,
 //        NULL, (GDestroyNotify) publish_request_data_free);
 
-    return obj;
 }
 
 static void
@@ -204,7 +250,6 @@ static TpHandleSet* contact_list_dup_contacts(TpBaseContactList* base)
      * Because libpurple, that's only people whose request we accepted during
      * this session :-( */
     TpHandleSet *handles = tp_handle_set_copy (self->priv->publishing_to);
-    tp_handle_set_add(handles,tp_handle_ensure(contact_repo, "123", NULL, NULL));
     /* Also include anyone on our buddy list */
     LwqqBuddy* buddy;
     LIST_FOREACH(buddy, &lc->friends, entries){
@@ -246,7 +291,7 @@ contact_list_dup_states (TpBaseContactList *cl,
             TP_HANDLE_TYPE_CONTACT, contact);
     LwqqClient* lc = self->priv->conn->lc;
     LwqqBuddy* buddy = lc->find_buddy_by_uin(lc,bname);
-    TpSubscriptionState pub, sub;
+    TpSubscriptionState pub = TP_SUBSCRIPTION_STATE_YES, sub;
     /*PublishRequestData *pub_req = g_hash_table_lookup (
       self->priv->pending_publish_requests, GUINT_TO_POINTER (contact));
       */
@@ -294,13 +339,13 @@ contact_list_dup_states (TpBaseContactList *cl,
         *publish_out = pub;
 }
 
-    static void
+static void
 lwqq_contact_list_class_init (LwqqContactListClass *klass)
 {
     GObjectClass *object_class = G_OBJECT_CLASS (klass);
     TpBaseContactListClass *parent_class = TP_BASE_CONTACT_LIST_CLASS (klass);
 
-    object_class->constructor = lwqq_contact_list_constructor;
+    object_class->constructed = lwqq_contact_list_constructed;
 
     object_class->dispose = lwqq_contact_list_dispose;
     object_class->finalize = lwqq_contact_list_finalize;

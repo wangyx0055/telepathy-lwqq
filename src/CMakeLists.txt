@@ -4,7 +4,6 @@ set(SRC
     connection-manager.c 
     contact-list.c
     protocol.c 
-    handles.c 
     im-manager.c
     )
 

@@ -98,10 +98,12 @@ _contact_normalize (TpHandleRepoIface *repo,
                     gpointer context,
                     GError **error)
 {
-    LwqqConnection *conn = LWQQ_CONNECTION (context);
+    printf("%s\n",id);
+    return g_strdup(id);
+    /*LwqqConnection *conn = LWQQ_CONNECTION (context);
     LwqqClient* lc = conn->lc;
     if(lc==NULL) return g_strdup(id);
-    return g_strdup (lc->myself->nick);
+    return g_strdup (lc->myself->nick);*/
 }
 
 static void _iface_create_handle_repos(TpBaseConnection *self,
@@ -600,9 +602,12 @@ static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
 	param_spec = g_param_spec_boolean("password-prompt", "Password prompt", "Whether the connection should pop up a SASL channel if no password is given", FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT);
 	g_object_class_install_property(object_class, PROP_PASSWORD_PROMPT, param_spec);
 
-	tp_contacts_mixin_class_init (object_class, G_STRUCT_OFFSET (LwqqConnectionClass, contacts));
-	lwqq_contact_info_class_init(klass);
     */
+	//lwqq_contact_info_class_init(klass);
+
+    tp_contacts_mixin_class_init (object_class,
+        G_STRUCT_OFFSET (LwqqConnectionClass, contacts_class));
+    tp_base_contact_list_mixin_class_init (parent_class);
 
 #if 0
 	/* This is a hack to make the test suite run in finite time. */
