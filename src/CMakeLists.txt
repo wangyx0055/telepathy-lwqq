@@ -5,6 +5,7 @@ set(SRC
     contact-list.c
     protocol.c 
     im-manager.c
+    captcha.c
     )
 
 include_directories(
