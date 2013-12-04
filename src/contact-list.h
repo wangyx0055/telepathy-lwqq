@@ -3,9 +3,10 @@
 
 #include <glib-object.h>
 
-#include <telepathy-glib/base-contact-list.h>
+#include <telepathy-glib/telepathy-glib.h>
 #include <lwqq/lwqq.h>
 
+#define to_presence(lwqq_status) (lwqq_status/10)
 
 G_BEGIN_DECLS
 
@@ -44,4 +45,6 @@ GType lwqq_contact_list_get_type (void);
 G_END_DECLS
 
 void lwqq_contact_list_add_buddy(LwqqClient* lc,LwqqBuddy* buddy);
+const TpPresenceStatusSpec* lwqq_contact_list_presence_statuses();
+guint lwqq_contact_list_get_presence(LwqqContactList* self,TpHandle contact);
 #endif

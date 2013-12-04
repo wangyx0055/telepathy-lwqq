@@ -78,6 +78,9 @@ struct _LwqqConnectionPrivate {
     char* username;
     char* password;
     lwqq_js_t* js;
+    LwqqAsyncEvent* hash_valid_event;
+
+    TpHandleRepoIface* contact_repo;
 
 	/* so we can pop up a SASL channel asking for the password */
 	TpSimplePasswordManager *password_manager;
@@ -123,6 +126,26 @@ static void _iface_create_handle_repos(TpBaseConnection *self,
 }
 
 
+static void
+presence_updated_cb (LwqqContactList *contact_list,
+                     TpHandle contact,
+                     LwqqConnection *self)
+{
+  TpBaseConnection *base = (TpBaseConnection *) self;
+  TpPresenceStatus *status;
+  LwqqClient* lc = self->lc;
+
+  /* we ignore the presence indicated by the contact list for our own handle */
+  if (contact == tp_base_connection_get_self_handle (base))
+    return;
+
+
+  status = tp_presence_status_new ( lwqq_contact_list_get_presence(contact_list, contact), NULL);
+  tp_presence_mixin_emit_one_presence_update ((GObject *) self, contact,
+          status);
+  tp_presence_status_free (status);
+}
+
 static GPtrArray *_iface_create_channel_managers(TpBaseConnection *base) {
 	LwqqConnection *self = LWQQ_CONNECTION (base);
 	LwqqConnectionPrivate *priv = self->priv;
@@ -142,6 +165,8 @@ static GPtrArray *_iface_create_channel_managers(TpBaseConnection *base) {
     self->contact_list =
         LWQQ_CONTACT_LIST(g_object_new(LWQQ_TYPE_CONTACT_LIST,"connection",self,NULL));
     g_ptr_array_add(managers, self->contact_list);
+
+    g_signal_connect(self->contact_list, "presence-update", (GCallback)presence_updated_cb, self);
 
 	/*
 	manager = g_object_new(IDLE_TYPE_ROOMLIST_MANAGER, "connection", self, NULL);
@@ -179,7 +204,7 @@ static void _iface_shut_down(TpBaseConnection *base) {
 #endif
 }
 
-static void login_stage_3(LwqqClient* lc)
+static void login_into_server(LwqqClient* lc,LwqqErrorCode err)
 {
     LwqqConnection* conn = lc->data;
     LwqqBuddy* buddy;
@@ -342,6 +367,7 @@ static void get_friends_info_retry(LwqqClient* lc,LwqqHashFunc hashtry)
 static void friends_valid_hash(LwqqAsyncEvent* ev,LwqqHashFunc last_hash)
 {
     LwqqClient* lc = ev->lc;
+    LwqqConnection* conn = lc->data;
     //qq_account* ac = lc->data;
     if(ev->result == LWQQ_EC_HASH_WRONG){
 #ifdef WITH_MOZJS
@@ -370,9 +396,9 @@ static void friends_valid_hash(LwqqAsyncEvent* ev,LwqqHashFunc last_hash)
     event = lwqq_info_get_group_name_list(lc,NULL);
     lwqq_async_add_event_listener(event,_C_(2p,login_stage_2,event,lc));
     */
-    login_stage_3(lc);
+    lwqq_async_event_finish(conn->priv->hash_valid_event);
 }
-static void login_stage_1(LwqqClient* lc,LwqqErrorCode err)
+LwqqAsyncEvent* lwqq_connection_get_friend_list(LwqqClient* lc,LwqqErrorCode err)
 {
     if(!lwqq_client_valid(lc)) return;
     LwqqConnection* conn = lc->data;
@@ -382,6 +408,7 @@ static void login_stage_1(LwqqClient* lc,LwqqErrorCode err)
     char path[512];
     if(access(LOCAL_HASH_JS(path),F_OK)==0)
         get_friends_info_retry(lc, hash_with_local_file);
+        
     //else
         //get_friends_info_retry(lc, hash_with_remote_file);
 #else
@@ -389,11 +416,13 @@ static void login_stage_1(LwqqClient* lc,LwqqErrorCode err)
     lwqq_async_add_event_listener(ev, _C_(2p,friends_valid_hash,ev,lwqq_util_hashQ));
 #endif
 
-    return ;
+    conn->priv->hash_valid_event = lwqq_async_event_new(NULL);
+    conn->priv->hash_valid_event->lc = lc;
+    return conn->priv->hash_valid_event;
 }
 
 static LwqqAction lwqq_global_action = {
-    .login_complete = login_stage_1,
+    .login_complete = login_into_server,
     //.need_verify2 = need_verify
 };
 static gboolean local_do_dispatch(gpointer data)
@@ -600,15 +629,10 @@ get_contact_statuses (GObject *object,
 
         /* we get our own status from the connection, and everyone else's status
          * from the contact lists */
-        if (contact == tp_base_connection_get_self_handle (base)) {
-            presence = lc->myself->stat;
-        }
+        if (contact == tp_base_connection_get_self_handle (base)) 
+            presence = to_presence(lc->myself->stat);
         else
-        {
-            const gchar* id = tp_handle_inspect(contact_repo, contact);
-            LwqqBuddy* b = lwqq_buddy_find_buddy_by_qqnumber(lc, id);
-            presence = b->stat;
-        }
+            presence = lwqq_contact_list_get_presence(self->contact_list, contact);
 
         parameters = g_hash_table_new_full (g_str_hash,
                 g_str_equal, NULL, (GDestroyNotify) tp_g_value_slice_free);
@@ -724,7 +748,7 @@ static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
     tp_presence_mixin_class_init (object_class,
             G_STRUCT_OFFSET (LwqqConnectionClass, presence_class),
             status_available, get_contact_statuses, set_own_status,
-            example_contact_list_presence_statuses ());
+            lwqq_contact_list_presence_statuses());
     tp_presence_mixin_simple_presence_init_dbus_properties (object_class);
 
     tp_base_contact_list_mixin_class_init (parent_class);

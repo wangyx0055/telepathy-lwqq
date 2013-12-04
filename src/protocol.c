@@ -31,7 +31,6 @@
 #include "lwqq-im-manager.h"
 #include "lwqq-muc-manager.h"*/
 
-#define PROTOCOL_NAME "webqq"
 #define ICON_NAME "im-" PROTOCOL_NAME
 #define ENGLISH_NAME "WEBQQ"
 #define VCARD_FIELD_NAME "x-" PROTOCOL_NAME

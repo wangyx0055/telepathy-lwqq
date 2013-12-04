@@ -73,10 +73,13 @@ void lwqq_connection_emit_queued_aliases_changed(LwqqConnection *conn);
 void lwqq_connection_send(LwqqConnection *conn, const gchar *msg);
 gsize lwqq_connection_get_max_message_length(LwqqConnection *conn);
 */
+
+G_END_DECLS
+
+
 const gchar * const *lwqq_connection_get_implemented_interfaces (void);
 const gchar * lwqq_connection_handle_inspect (LwqqConnection *conn,
         TpHandleType handle_type, TpHandle handle);
-
-G_END_DECLS
+LwqqAsyncEvent* lwqq_connection_get_friend_list(LwqqClient* lc,LwqqErrorCode err);
 
 #endif /* #ifndef __LWQQ_CONNECTION_H__*/

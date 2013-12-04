@@ -23,6 +23,8 @@
 #include <glib-object.h>
 #include <telepathy-glib/base-protocol.h>
 
+#define PROTOCOL_NAME "webqq"
+
 G_BEGIN_DECLS
 
 typedef struct _LwqqProtocol LwqqProtocol;
