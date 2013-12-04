@@ -84,14 +84,20 @@ new_connection (TpBaseProtocol *protocol G_GNUC_UNUSED,
       //"realname", tp_asv_get_string (params, "fullname"),
       NULL);
 }
-/*
+/** >>>unclear<<< **/
 static gchar *
 normalize_contact (TpBaseProtocol *self G_GNUC_UNUSED,
                    const gchar *contact,
                    GError **error)
 {
-  return lwqq_normalize_nickname (contact, error);
+    if(contact[0] == '\0'){
+        g_set_error(error, TP_ERROR, TP_ERROR_INVALID_HANDLE, "QQ must not be empty");
+        return NULL;
+    }
+
+    return g_strdup(contact);
 }
+/*
 
 static gchar *
 identify_account (TpBaseProtocol *self G_GNUC_UNUSED,
@@ -176,19 +182,13 @@ lwqq_protocol_class_init (LwqqProtocolClass *klass)
   TpBaseProtocolClass *base_class = (TpBaseProtocolClass *) klass;
 
   base_class->get_parameters = get_parameters;
-  base_class->get_connection_details = get_connection_details;
   base_class->new_connection = new_connection;
-  /*base_class->normalize_contact = normalize_contact;
-  base_class->identify_account = identify_account;
-  base_class->get_interfaces = get_interfaces;
+  base_class->get_connection_details = get_connection_details;
+
+  base_class->normalize_contact = normalize_contact;
+  //base_class->identify_account = identify_account;
+  /*base_class->get_interfaces = get_interfaces;
   base_class->dup_authentication_types = dup_authentication_types;
   */
 }
 
-TpBaseProtocol *
-lwqq_protocol_new (void)
-{
-  return g_object_new (LWQQ_TYPE_PROTOCOL,
-      "name", PROTOCOL_NAME,
-      NULL);
-}

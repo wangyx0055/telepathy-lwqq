@@ -11,13 +11,8 @@
 
 G_DEFINE_TYPE(LwqqConnectionManager, lwqq_connection_manager, TP_TYPE_BASE_CONNECTION_MANAGER)
 
-static void lwqq_connection_manager_init(LwqqConnectionManager *obj) {
-}
-
-static void
-lwqq_connection_manager_finalize (GObject *object)
-{
-	G_OBJECT_CLASS (lwqq_connection_manager_parent_class)->finalize (object);
+static void 
+lwqq_connection_manager_init(LwqqConnectionManager *obj) {
 }
 
 static void lwqq_connection_manager_constructed (GObject *object) {
@@ -28,8 +23,12 @@ static void lwqq_connection_manager_constructed (GObject *object) {
 	if (constructed != NULL)
 		constructed (object);
 
-	p = lwqq_protocol_new ();
+    p = g_object_new (LWQQ_TYPE_PROTOCOL,
+            "name", PROTOCOL_NAME,
+            NULL);
+
 	tp_base_connection_manager_add_protocol (base, p);
+    //let it auto released
 	g_object_unref (p);
 }
 
@@ -37,8 +36,7 @@ static void lwqq_connection_manager_class_init(LwqqConnectionManagerClass *klass
 	GObjectClass *object_class = G_OBJECT_CLASS (klass);
 	TpBaseConnectionManagerClass *parent_class = TP_BASE_CONNECTION_MANAGER_CLASS(klass);
 
-	parent_class->cm_dbus_name = "lwqq";
+	parent_class->cm_dbus_name = "tp_lwqq";
 
-	object_class->finalize = lwqq_connection_manager_finalize;
 	object_class->constructed = lwqq_connection_manager_constructed;
 }

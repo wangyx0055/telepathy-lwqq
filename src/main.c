@@ -23,7 +23,7 @@ static void to_debug_sender(int l,const char* msg)
 	g_object_unref (dbg);
 }
 
-void tlqq_debug_init()
+void tp_lwqq_debug_init()
 {
     tp_debug_set_flags("all");
 
@@ -43,7 +43,7 @@ int main(int argc,char **argv)
     g_set_prgname(UI_ID);
 
     tp_debug_divert_messages(g_getenv("LWQQ_LOGFILE"));
-    tlqq_debug_init();
+    tp_lwqq_debug_init();
     //lwqq_log_redirect(to_debug_sender);
     lwqq_log_set_level(3);
 

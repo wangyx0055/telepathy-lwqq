@@ -34,6 +34,8 @@ struct _PublishRequestData {
     gpointer data;
 };
 
+
+
 void
 lwqq_contact_list_request_subscription (LwqqContactList *self,
     TpHandle handle,

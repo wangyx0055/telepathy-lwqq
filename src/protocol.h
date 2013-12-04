@@ -50,8 +50,6 @@ GType lwqq_protocol_get_type (void);
 #define LWQQ_IS_PROTOCOL_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), LWQQ_TYPE_PROTOCOL))
 #define LWQQ_PROTOCOL_GET_CLASS(klass) (G_TYPE_INSTANCE_GET_CLASS ((obj), LWQQ_TYPE_PROTOCOL, LwqqProtocolClass))
 
-TpBaseProtocol *lwqq_protocol_new (void);
-
 G_END_DECLS
 
 #endif

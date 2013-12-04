@@ -22,9 +22,7 @@
 #define __LWQQ_CONNECTION_H__
 
 #include <glib-object.h>
-#include <telepathy-glib/base-connection.h>
-#include <telepathy-glib/handle.h>
-#include <telepathy-glib/contacts-mixin.h>
+#include <telepathy-glib/telepathy-glib.h>
 
 #include "contact-list.h"
 
@@ -37,11 +35,13 @@ typedef struct _LwqqConnectionPrivate LwqqConnectionPrivate;
 struct _LwqqConnectionClass {
 	TpBaseConnectionClass parent_class;
 	TpContactsMixinClass contacts_class;
+    TpPresenceMixinClass presence_class;
 };
 
 struct _LwqqConnection {
 	TpBaseConnection parent;
 	TpContactsMixin contacts;
+    TpPresenceMixin presence;
 	//LwqqParser *parser;
 	GQueue *contact_info_requests;
     LwqqContactList* contact_list;

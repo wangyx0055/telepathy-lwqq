@@ -50,6 +50,23 @@
 #define GLOBAL_HASH_JS(buf) (snprintf(buf,sizeof(buf),"%s"LWQQ_PATH_SEP"hash.js",\
             GLOBAL_DATADIR),buf)
 
+G_DEFINE_TYPE_WITH_CODE(LwqqConnection,
+    lwqq_connection,
+    TP_TYPE_BASE_CONNECTION,
+    G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_CONTACTS,
+      tp_contacts_mixin_iface_init);
+    G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_CONTACT_LIST,
+      tp_base_contact_list_mixin_list_iface_init);
+    G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_CONTACT_GROUPS,
+      tp_base_contact_list_mixin_groups_iface_init);
+    G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_CONTACT_BLOCKING,
+      tp_base_contact_list_mixin_blocking_iface_init);
+    G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_PRESENCE,
+      tp_presence_mixin_iface_init);
+    G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_SIMPLE_PRESENCE,
+      tp_presence_mixin_simple_presence_iface_init)
+    );
+
 enum {
 	PROP_USERNAME = 1,
 	PROP_PASSWORD,
@@ -75,15 +92,6 @@ static const gchar * interfaces_always_present[] = {
 	NULL};
 
 static void friends_valid_hash(LwqqAsyncEvent* ev,LwqqHashFunc last_hash);
-
-G_DEFINE_TYPE_WITH_CODE(LwqqConnection,
-    lwqq_connection,
-    TP_TYPE_BASE_CONNECTION,
-    G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_CONTACTS,
-        tp_contacts_mixin_iface_init);
-    G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_CONTACT_LIST,
-        tp_base_contact_list_mixin_list_iface_init)
-    );
 
 
 const gchar * const *lwqq_connection_get_implemented_interfaces (void) {
@@ -175,7 +183,7 @@ static void login_stage_3(LwqqClient* lc)
 {
     LwqqConnection* conn = lc->data;
     LwqqBuddy* buddy;
-    tp_base_contact_list_set_list_received(&conn->contact_list->parent);
+    //tp_base_contact_list_set_list_received(&conn->contact_list->parent);
     tp_base_connection_change_status(&conn->parent,
             TP_CONNECTION_STATUS_CONNECTED,
             TP_CONNECTION_STATUS_REASON_REQUESTED);
@@ -385,7 +393,8 @@ static void login_stage_1(LwqqClient* lc,LwqqErrorCode err)
 }
 
 static LwqqAction lwqq_global_action = {
-    .login_complete = login_stage_1
+    .login_complete = login_stage_1,
+    //.need_verify2 = need_verify
 };
 static gboolean local_do_dispatch(gpointer data)
 {
@@ -458,19 +467,42 @@ static void lwqq_connection_init(LwqqConnection *obj) {
 }
 static void lwqq_connection_finalize(GObject* obj)
 {
-    LwqqConnection* conn = (LwqqConnection*)obj;
-    lwqq_js_close(conn->priv->js);
+    LwqqConnection* self = LWQQ_CONNECTION(obj);
+
+    lwqq_js_close(self->priv->js);
+
+    tp_contacts_mixin_finalize (obj);
+
+    G_OBJECT_CLASS (lwqq_connection_parent_class)->finalize (
+            obj);
 }
 
 static void
 lwqq_connection_constructed (GObject *object)
 {
-    LwqqConnection *self = LWQQ_CONNECTION (object);
+    TpBaseConnection* base = TP_BASE_CONNECTION(object);
 
-    /*idle_contact_info_init (self);
-    tp_contacts_mixin_add_contact_attributes_iface (object,
+    void (*chain_up) (GObject *) =
+        G_OBJECT_CLASS (lwqq_connection_parent_class)->constructed;
+
+    if (chain_up != NULL)
+        chain_up (object);
+
+
+    tp_contacts_mixin_init (object,
+            G_STRUCT_OFFSET (LwqqConnection, contacts));
+
+    tp_base_connection_register_with_contacts_mixin (base);
+    tp_base_contact_list_mixin_register_with_contacts_mixin (base);
+
+    /*tp_contacts_mixin_add_contact_attributes_iface (object,
             TP_IFACE_CONNECTION_INTERFACE_ALIASING,
-            conn_aliasing_fill_contact_attributes);*/
+            aliasing_fill_contact_attributes);
+            */
+
+    tp_presence_mixin_init (object,
+            G_STRUCT_OFFSET (LwqqConnection, presence));
+    tp_presence_mixin_simple_presence_register_with_contacts_mixin (object);
 }
 
 #if 0
@@ -500,7 +532,7 @@ lwqq_connection_constructor (GType type,
 }
 #endif
 
-static void lwqq_connection_set_property(GObject *obj, guint prop_id, const GValue *value, GParamSpec *pspec) {
+static void set_property(GObject *obj, guint prop_id, const GValue *value, GParamSpec *pspec) {
 	LwqqConnection *self = LWQQ_CONNECTION(obj);
 	LwqqConnectionPrivate *priv = self->priv;
 
@@ -519,7 +551,7 @@ static void lwqq_connection_set_property(GObject *obj, guint prop_id, const GVal
 	}
 }
 
-static void lwqq_connection_get_property(GObject *obj, guint prop_id, GValue *value, GParamSpec *pspec) {
+static void get_property(GObject *obj, guint prop_id, GValue *value, GParamSpec *pspec) {
 	LwqqConnection *self = LWQQ_CONNECTION(obj);
 	LwqqConnectionPrivate *priv = self->priv;
 
@@ -535,6 +567,89 @@ static void lwqq_connection_get_property(GObject *obj, guint prop_id, GValue *va
 			break;
 	}
 }
+
+
+static gboolean
+status_available (GObject *object,
+                  guint index_)
+{
+  TpBaseConnection *base = TP_BASE_CONNECTION (object);
+
+  return tp_base_connection_check_connected (base, NULL);
+}
+
+static GHashTable *
+get_contact_statuses (GObject *object,
+                      const GArray *contacts,
+                      GError **error)
+{
+    LwqqConnection *self = LWQQ_CONNECTION(object);
+    TpBaseConnection *base = TP_BASE_CONNECTION (object);
+    LwqqClient* lc = self->lc;
+    guint i;
+    GHashTable *result = g_hash_table_new_full (g_direct_hash, g_direct_equal,
+            NULL, (GDestroyNotify) tp_presence_status_free);
+
+    TpHandleRepoIface* contact_repo = tp_base_connection_get_handles(base, TP_HANDLE_TYPE_CONTACT);
+
+    for (i = 0; i < contacts->len; i++)
+    {
+        TpHandle contact = g_array_index (contacts, guint, i);
+        LwqqStatus presence;
+        GHashTable *parameters;
+
+        /* we get our own status from the connection, and everyone else's status
+         * from the contact lists */
+        if (contact == tp_base_connection_get_self_handle (base)) {
+            presence = lc->myself->stat;
+        }
+        else
+        {
+            const gchar* id = tp_handle_inspect(contact_repo, contact);
+            LwqqBuddy* b = lwqq_buddy_find_buddy_by_qqnumber(lc, id);
+            presence = b->stat;
+        }
+
+        parameters = g_hash_table_new_full (g_str_hash,
+                g_str_equal, NULL, (GDestroyNotify) tp_g_value_slice_free);
+        g_hash_table_insert (result, GUINT_TO_POINTER (contact),
+                tp_presence_status_new (presence, parameters));
+        g_hash_table_unref (parameters);
+    }
+
+    return result;
+}
+
+
+static gboolean
+set_own_status (GObject *object,
+                const TpPresenceStatus *status,
+                GError **error)
+{
+    LwqqConnection* self = LWQQ_CONNECTION(object);
+    TpBaseConnection *base = TP_BASE_CONNECTION (object);
+    LwqqClient* lc = self->lc;
+    GHashTable *presences;
+
+    LwqqStatus state = status->index;
+
+    LWQQ_SYNC_BEGIN(lc);
+    lwqq_info_change_status(lc, state);
+    LWQQ_SYNC_END(lc);
+
+    if(lc->stat == state){
+        presences = g_hash_table_new_full (g_direct_hash, g_direct_equal,
+                NULL, NULL);
+        g_hash_table_insert (presences,
+                GUINT_TO_POINTER (tp_base_connection_get_self_handle (base)),
+                (gpointer) status);
+        tp_presence_mixin_emit_presence_update (object, presences);
+        g_hash_table_unref (presences);
+        return TRUE;
+    }else
+        return FALSE;
+}
+
 static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	TpBaseConnectionClass *parent_class = TP_BASE_CONNECTION_CLASS(klass);
@@ -543,15 +658,11 @@ static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
 	g_type_class_add_private(klass, sizeof(LwqqConnectionPrivate));
 
     object_class->constructed = lwqq_connection_constructed;
-	object_class->set_property = lwqq_connection_set_property;
-	object_class->get_property = lwqq_connection_get_property;
-    /*
-	object_class->dispose = lwqq_connection_dispose;
-    */
+	object_class->set_property = set_property;
+	object_class->get_property = get_property;
 	object_class->finalize = lwqq_connection_finalize;
 
 	parent_class->create_handle_repos = _iface_create_handle_repos;
-	parent_class->create_channel_factories = NULL;
 	parent_class->create_channel_managers = _iface_create_channel_managers;
 	parent_class->shut_down = _iface_shut_down;
 	parent_class->start_connecting = _iface_start_connecting;
@@ -562,7 +673,9 @@ static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
 	parent_class->disconnected = _iface_disconnected;
 	parent_class->interfaces_always_present = interfaces_always_present;
     */
-	param_spec = g_param_spec_string("username", "User name", "The username of the user connecting to IRC", NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+	param_spec = g_param_spec_string("username", "User name", 
+            "The username of the user connecting to WebQQ", NULL, 
+            G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
 	g_object_class_install_property(object_class, PROP_USERNAME, param_spec);
 
 	param_spec = g_param_spec_string("password", "Server password", 
@@ -606,14 +719,16 @@ static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
 	//lwqq_contact_info_class_init(klass);
 
     tp_contacts_mixin_class_init (object_class,
-        G_STRUCT_OFFSET (LwqqConnectionClass, contacts_class));
+            G_STRUCT_OFFSET (LwqqConnectionClass, contacts_class));
+
+    tp_presence_mixin_class_init (object_class,
+            G_STRUCT_OFFSET (LwqqConnectionClass, presence_class),
+            status_available, get_contact_statuses, set_own_status,
+            example_contact_list_presence_statuses ());
+    tp_presence_mixin_simple_presence_init_dbus_properties (object_class);
+
     tp_base_contact_list_mixin_class_init (parent_class);
 
-#if 0
-	/* This is a hack to make the test suite run in finite time. */
-	if (!tp_str_empty (g_getenv ("LWQQ_HTFU")))
-		flush_queue_faster = TRUE;
-#endif
 }
 
 
