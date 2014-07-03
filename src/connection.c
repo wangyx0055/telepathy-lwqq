@@ -75,15 +75,13 @@ enum {
 
 
 struct _LwqqConnectionPrivate {
-    char* username;
-    char* password;
-    lwqq_js_t* js;
-    LwqqAsyncEvent* hash_valid_event;
+   char* username;
+   char* password;
 
-    TpHandleRepoIface* contact_repo;
+   TpHandleRepoIface* contact_repo;
 
-	/* so we can pop up a SASL channel asking for the password */
-	TpSimplePasswordManager *password_manager;
+   /* so we can pop up a SASL channel asking for the password */
+   TpSimplePasswordManager *password_manager;
 };
 
 static const gchar * interfaces_always_present[] = {
@@ -93,9 +91,6 @@ static const gchar * interfaces_always_present[] = {
 	TP_IFACE_CONNECTION_INTERFACE_REQUESTS,*/
 	TP_IFACE_CONNECTION_INTERFACE_CONTACTS,
 	NULL};
-
-static void friends_valid_hash(LwqqAsyncEvent* ev,LwqqHashFunc last_hash);
-
 
 const gchar * const *lwqq_connection_get_implemented_interfaces (void) {
 	/* we don't have any conditionally-implemented interfaces yet */
@@ -204,7 +199,7 @@ static void _iface_shut_down(TpBaseConnection *base) {
 #endif
 }
 
-static void login_into_server(LwqqClient* lc,LwqqErrorCode err)
+static void login_into_server(LwqqClient* lc,LwqqErrorCode* err)
 {
     LwqqConnection* conn = lc->data;
     LwqqBuddy* buddy;
@@ -320,111 +315,14 @@ static void login_into_server(LwqqClient* lc,LwqqErrorCode err)
     lwqq_msglist_poll(lc->msg_list, flags);*/
 }
 
-#ifdef WITH_MOZJS
-static char* hash_with_local_file(const char* uin,const char* ptwebqq,void* ac_)
-{
-    char path[512] = {0};
-    lwqq_js_t* js = ((LwqqConnection*)ac_)->priv->js;
-    if(access(LOCAL_HASH_JS(path), F_OK)!=0)
-        if(access(GLOBAL_HASH_JS(path),F_OK)!=0)
-            return NULL;
-    lwqq_jso_t* obj = lwqq_js_load(js,path);
-    char* res = NULL;
-    
-    res = lwqq_js_hash(uin, ptwebqq, js);
-    lwqq_js_unload(js, obj);
-
-    return res;
-}
-#if 0
-static char* hash_with_remote_file(const char* uin,const char* ptwebqq,void* ac_)
-{
-    //github.com is too slow
-    const char* url = "http://pidginlwqq.sinaapp.com/hash.js";
-    LwqqErrorCode ec = qq_download(url, "hash.js", lwdb_get_config_dir());
-    if(ec){
-        lwqq_log(LOG_ERROR,"Could not download JS From %s",url);
-    }
-    return hash_with_local_file(uin, ptwebqq, ac_);
-}
-static char* hash_with_db_url(const char* uin,const char* ptwebqq,void* ac_)
-{
-    qq_account* ac = ac_;
-    const char* url = lwdb_userdb_read(ac->db, "hash.js");
-    if(url == NULL) return NULL;
-    if(qq_download(url,"hash.js",lwdb_get_config_dir())==LWQQ_EC_ERROR) return NULL;
-    return hash_with_local_file(uin, ptwebqq, ac_);
-}
-#endif
-static void get_friends_info_retry(LwqqClient* lc,LwqqHashFunc hashtry)
-{
-    LwqqAsyncEvent* ev;
-    ev = lwqq_info_get_friends_info(lc,hashtry,lc->data);
-    lwqq_async_add_event_listener(ev, _C_(2p,friends_valid_hash,ev,hashtry));
-}
-#endif
-
-static void friends_valid_hash(LwqqAsyncEvent* ev,LwqqHashFunc last_hash)
-{
-    LwqqClient* lc = ev->lc;
-    LwqqConnection* conn = lc->data;
-    //qq_account* ac = lc->data;
-    if(ev->result == LWQQ_EC_HASH_WRONG){
-#ifdef WITH_MOZJS
-        if(last_hash == hash_with_local_file){
-//            get_friends_info_retry(lc, hash_with_remote_file);
-			return;
-        }/*else if(last_hash == hash_with_remote_file){
-            //get_friends_info_retry(lc, hash_with_db_url);
-			return;
-		}*/
-#endif
-		/*purple_connection_error_reason(ac->gc, 
-				PURPLE_CONNECTION_ERROR_OTHER_ERROR, 
-				_("Hash Function Wrong, WebQQ Protocol update"));
-                */
-		return;
-    }
-    if(ev->result != LWQQ_EC_OK){
-        /*purple_connection_error_reason(ac->gc, 
-                PURPLE_CONNECTION_ERROR_NETWORK_ERROR, 
-                _("Get Friend List Failed"));
-                */
-        return;
-    }
-    /*LwqqAsyncEvent* event;
-    event = lwqq_info_get_group_name_list(lc,NULL);
-    lwqq_async_add_event_listener(event,_C_(2p,login_stage_2,event,lc));
-    */
-    lwqq_async_event_finish(conn->priv->hash_valid_event);
-}
 LwqqAsyncEvent* lwqq_connection_get_friend_list(LwqqClient* lc,LwqqErrorCode err)
 {
     if(!lwqq_client_valid(lc)) return;
     LwqqConnection* conn = lc->data;
 
-
-#ifdef WITH_MOZJS
-    char path[512];
-    if(access(LOCAL_HASH_JS(path),F_OK)==0)
-        get_friends_info_retry(lc, hash_with_local_file);
-        
-    //else
-        //get_friends_info_retry(lc, hash_with_remote_file);
-#else
-    LwqqAsyncEvent* ev = lwqq_info_get_friends_info(lc, lwqq_util_hashQ,NULL);
-    lwqq_async_add_event_listener(ev, _C_(2p,friends_valid_hash,ev,lwqq_util_hashQ));
-#endif
-
-    conn->priv->hash_valid_event = lwqq_async_event_new(NULL);
-    conn->priv->hash_valid_event->lc = lc;
-    return conn->priv->hash_valid_event;
+    return lwqq_info_get_friends_info(lc, NULL, NULL);
 }
 
-static LwqqAction lwqq_global_action = {
-    .login_complete = login_into_server,
-    //.need_verify2 = need_verify
-};
 static gboolean local_do_dispatch(gpointer data)
 {
     LwqqCommand* cmd = data;
@@ -432,11 +330,16 @@ static gboolean local_do_dispatch(gpointer data)
     free(cmd);
     return 0;
 }
-static void local_dispatch(LwqqCommand cmd)
+static void local_dispatch(LwqqCommand cmd, unsigned long timeout)
 {
-    LwqqCommand* cmd_ = s_malloc0(sizeof(*cmd_));
-    *cmd_ = cmd;
-    g_timeout_add(50, local_do_dispatch, cmd_);
+   LwqqCommand* cmd_ = s_malloc0(sizeof(*cmd_));
+   *cmd_ = cmd;
+   g_timeout_add(timeout, local_do_dispatch, cmd_);
+}
+static void register_events(LwqqClient* lc)
+{
+   lwqq_add_event(lc->events->login_complete, 
+         _C_(2p, login_into_server, lc, &lc->args->login_ec));
 }
 /******START CONNECTION TO SERVER*****************/
 static gboolean _iface_start_connecting(TpBaseConnection *self, GError **error) {
@@ -467,15 +370,15 @@ static gboolean _iface_start_connecting(TpBaseConnection *self, GError **error) 
 	*/
 
 
-    tp_base_connection_change_status(self, TP_CONNECTION_STATUS_CONNECTING,
-                                     TP_CONNECTION_STATUS_REASON_REQUESTED);
+   tp_base_connection_change_status(self, TP_CONNECTION_STATUS_CONNECTING,
+         TP_CONNECTION_STATUS_REASON_REQUESTED);
 
 	LwqqClient* lc = lwqq_client_new(priv->username,priv->password);
 	lwqq_log_set_level(4);
-    lc->action = &lwqq_global_action;
-    lc->dispatch = local_dispatch;
-    lc->data = conn;
-	lwqq_login(lc, LWQQ_STATUS_ONLINE, NULL);
+   register_events(lc);
+   lc->dispatch = local_dispatch;
+   lc->data = conn;
+   lwqq_login(lc, LWQQ_STATUS_ONLINE, NULL);
 	conn->lc = lc;
 	return TRUE;
 }
@@ -484,21 +387,18 @@ static gboolean _iface_start_connecting(TpBaseConnection *self, GError **error) 
 static void lwqq_connection_init(LwqqConnection *obj) {
 	LwqqConnectionPrivate *priv = G_TYPE_INSTANCE_GET_PRIVATE (obj, LWQQ_TYPE_CONNECTION, LwqqConnectionPrivate);
 
-	obj->priv = priv;
-    obj->priv->js = lwqq_js_init();
-    /*
-	priv->sconn_connected = FALSE;
-	priv->msg_queue = g_queue_new();
+   obj->priv = priv;
+   /*
+      priv->sconn_connected = FALSE;
+      priv->msg_queue = g_queue_new();
 
-	tp_contacts_mixin_init ((GObject *) obj, G_STRUCT_OFFSET (LwqqConnection, contacts));
-	tp_base_connection_register_with_contacts_mixin ((TpBaseConnection *) obj);
-    */
+      tp_contacts_mixin_init ((GObject *) obj, G_STRUCT_OFFSET (LwqqConnection, contacts));
+      tp_base_connection_register_with_contacts_mixin ((TpBaseConnection *) obj);
+      */
 }
 static void lwqq_connection_finalize(GObject* obj)
 {
     LwqqConnection* self = LWQQ_CONNECTION(obj);
-
-    lwqq_js_close(self->priv->js);
 
     tp_contacts_mixin_finalize (obj);
 
@@ -681,7 +581,7 @@ static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
 
 	g_type_class_add_private(klass, sizeof(LwqqConnectionPrivate));
 
-    object_class->constructed = lwqq_connection_constructed;
+   object_class->constructed = lwqq_connection_constructed;
 	object_class->set_property = set_property;
 	object_class->get_property = get_property;
 	object_class->finalize = lwqq_connection_finalize;

@@ -33,22 +33,22 @@ typedef struct _LwqqConnectionClass LwqqConnectionClass;
 typedef struct _LwqqConnectionPrivate LwqqConnectionPrivate;
 
 struct _LwqqConnectionClass {
-	TpBaseConnectionClass parent_class;
-	TpContactsMixinClass contacts_class;
-    TpPresenceMixinClass presence_class;
+   TpBaseConnectionClass parent_class;
+   TpContactsMixinClass contacts_class;
+   TpPresenceMixinClass presence_class;
 };
 
 struct _LwqqConnection {
-	TpBaseConnection parent;
-	TpContactsMixin contacts;
-    TpPresenceMixin presence;
+   TpBaseConnection parent;
+   TpContactsMixin contacts;
+   TpPresenceMixin presence;
 	//LwqqParser *parser;
-	GQueue *contact_info_requests;
-    LwqqContactList* contact_list;
+   GQueue *contact_info_requests;
+   LwqqContactList* contact_list;
 
-	LwqqClient* lc;
+   LwqqClient* lc;
 
-	LwqqConnectionPrivate *priv;
+   LwqqConnectionPrivate *priv;
 };
 
 
