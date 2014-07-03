@@ -187,7 +187,13 @@ contact_list_remove_contacts_async(TpBaseContactList* cl,TpHandleSet*
   tp_simple_async_report_success_in_idle ((GObject *) self, callback,
       data, contact_list_remove_contacts_async);
 }
-
+static void
+contact_list_store_contacts_async (TpBaseContactList *cl,
+    TpHandleSet *contacts,
+    GAsyncReadyCallback callback,
+    gpointer user_data)
+{
+}
 static void
 contact_list_mutable_init (TpMutableContactListInterface *iface)
 {
@@ -197,7 +203,7 @@ contact_list_mutable_init (TpMutableContactListInterface *iface)
     /* we use the default _finish functions, which assume a GSimpleAsyncResult */
     iface->request_subscription_async  = contact_list_request_subscription_async;
     iface->authorize_publication_async = contact_list_authorize_publication_async;
-    //iface->store_contacts_async        = contact_list_store_contacts_async;
+    iface->store_contacts_async        = contact_list_store_contacts_async;
     iface->remove_contacts_async       = contact_list_remove_contacts_async;
 
     iface->unsubscribe_async           = contact_list_remove_contacts_async;
@@ -217,12 +223,15 @@ received_friend_list(LwqqContactList* self)
     TpHandle handle;
     TpHandleRepoIface* contact_repo = self->priv->contact_repo;
 
+    tp_base_contact_list_set_list_received(TP_BASE_CONTACT_LIST(self));
+
     LIST_FOREACH(buddy,&lc->friends,entries){
         handle = tp_handle_ensure(contact_repo, buddy->uin, NULL, NULL);
-        g_signal_emit(self, signals[PRESENCE_UPDATED], 0,handle);
+        tp_base_contact_list_one_contact_changed(&self->parent, handle);
+        g_message("test:%s\n", buddy->uin);
+        //g_signal_emit(self, signals[PRESENCE_UPDATED], 0,handle);
     }
 
-    tp_base_contact_list_set_list_received(TP_BASE_CONTACT_LIST(self));
 }
 
 static void
@@ -335,8 +344,9 @@ contact_list_dup_states (TpBaseContactList *cl,
     LwqqContactList *self = LWQQ_CONTACT_LIST (cl);
 
     g_message("Add State %s\n",tp_handle_inspect(self->priv->contact_repo, contact));
-    if(subscribe_out)*subscribe_out = TP_SUBSCRIPTION_STATE_YES;
-    if(publish_out)*publish_out = TP_SUBSCRIPTION_STATE_YES;
+    if(subscribe_out)*subscribe_out = TP_SUBSCRIPTION_STATE_NO;
+    if(publish_out)*publish_out = TP_SUBSCRIPTION_STATE_NO;
+    if(publish_request_out) *publish_request_out = g_strdup("");
 #if 0
     LwqqContactList *self = LWQQ_CONTACT_LIST (cl);
     const gchar *bname = lwqq_connection_handle_inspect (self->priv->conn,
@@ -405,7 +415,7 @@ lwqq_contact_list_class_init (LwqqContactListClass *klass)
 
     parent_class->dup_contacts = contact_list_dup_contacts;
     parent_class->dup_states = contact_list_dup_states;
-    parent_class->get_contact_list_persists = tp_base_contact_list_true_func;
+    //parent_class->get_contact_list_persists = tp_base_contact_list_true_func;
 
     g_type_class_add_private (object_class,
                               sizeof(LwqqContactListPrivate));

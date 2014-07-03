@@ -157,9 +157,9 @@ static GPtrArray *_iface_create_channel_managers(TpBaseConnection *base) {
 
 	priv->password_manager = tp_simple_password_manager_new(base);
 	g_ptr_array_add(managers, priv->password_manager);
-    self->contact_list =
-        LWQQ_CONTACT_LIST(g_object_new(LWQQ_TYPE_CONTACT_LIST,"connection",self,NULL));
-    g_ptr_array_add(managers, self->contact_list);
+   self->contact_list =
+      LWQQ_CONTACT_LIST(g_object_new(LWQQ_TYPE_CONTACT_LIST,"connection",self,NULL));
+   g_ptr_array_add(managers, self->contact_list);
 
     g_signal_connect(self->contact_list, "presence-update", (GCallback)presence_updated_cb, self);
 
@@ -345,8 +345,8 @@ static void register_events(LwqqClient* lc)
 static gboolean _iface_start_connecting(TpBaseConnection *self, GError **error) {
 	LwqqConnection *conn = LWQQ_CONNECTION(self);
 	LwqqConnectionPrivate *priv = conn->priv;
-    TpHandleRepoIface *contact_handles =
-        tp_base_connection_get_handles (self, TP_HANDLE_TYPE_CONTACT);
+   TpHandleRepoIface *contact_handles =
+      tp_base_connection_get_handles (self, TP_HANDLE_TYPE_CONTACT);
 
     self->self_handle = tp_handle_ensure (contact_handles,
         priv->username, NULL, NULL);
@@ -574,6 +574,17 @@ set_own_status (GObject *object,
         return FALSE;
 }
 
+static GPtrArray* _iface_get_interfaces_always_present(TpBaseConnection* self)
+{
+   GPtrArray* interfaces;
+
+   interfaces = TP_BASE_CONNECTION_CLASS(lwqq_connection_parent_class)
+      ->get_interfaces_always_present(self);
+
+   g_ptr_array_add(interfaces, TP_IFACE_CONNECTION_INTERFACE_CONTACT_LIST);
+   return interfaces;
+}
+
 static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	TpBaseConnectionClass *parent_class = TP_BASE_CONNECTION_CLASS(klass);
@@ -590,6 +601,7 @@ static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
 	parent_class->create_channel_managers = _iface_create_channel_managers;
 	parent_class->shut_down = _iface_shut_down;
 	parent_class->start_connecting = _iface_start_connecting;
+   parent_class->get_interfaces_always_present = _iface_get_interfaces_always_present;
     /*
 	parent_class->get_unique_connection_name = _iface_get_unique_connection_name;
 	parent_class->connecting = NULL;
