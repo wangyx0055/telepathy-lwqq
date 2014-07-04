@@ -226,9 +226,9 @@ received_all_info(LwqqClient* lc)
    LIST_FOREACH(buddy,&lc->friends,entries) {
       if(buddy->last_modify == -1 || buddy->last_modify == 0)
          lwdb_userdb_insert_buddy_info(db, &buddy);
-      handle = tp_handle_ensure(contact_repo, buddy->uin, NULL, NULL);
+      handle = tp_handle_ensure(contact_repo, buddy->qqnumber, NULL, NULL);
       //tp_base_contact_list_one_contact_changed(&self->parent, handle);
-      g_message("test:%s\n", buddy->uin);
+      g_message("test:%s\n", buddy->qqnumber);
       //g_signal_emit_by_name(conn, "presence-update", 1, handle);
    }
    LIST_FOREACH(group,&lc->groups,entries){
@@ -426,10 +426,9 @@ static TpHandleSet* contact_list_dup_contacts(TpBaseContactList* base)
     LwqqBuddy* buddy;
     LIST_FOREACH(buddy, &lc->friends, entries){
         TpHandle handle = tp_handle_ensure (contact_repo,
-                buddy->uin, NULL, NULL);
+                buddy->qqnumber, NULL, NULL);
 
         if (G_LIKELY (handle != 0)){
-            g_message("Add Contact %s\n",buddy->uin);
             tp_handle_set_add (handles, handle);
         }
     }
@@ -459,7 +458,6 @@ contact_list_dup_states (TpBaseContactList *cl,
 {
     LwqqContactList *self = LWQQ_CONTACT_LIST (cl);
 
-    g_message("Add State %s\n",tp_handle_inspect(self->priv->contact_repo, contact));
     if(subscribe_out)*subscribe_out = TP_SUBSCRIPTION_STATE_YES;
     if(publish_out)*publish_out = TP_SUBSCRIPTION_STATE_YES;
     if(publish_request_out) *publish_request_out = g_strdup("");
@@ -554,7 +552,7 @@ lwqq_contact_list_add_buddy(LwqqClient* lc,LwqqBuddy* buddy)
     TpBaseConnection *base_conn = TP_BASE_CONNECTION (conn);
     TpHandleRepoIface *contact_repo = tp_base_connection_get_handles (
         base_conn, TP_HANDLE_TYPE_CONTACT);
-    const char* name = buddy->uin;
+    const char* name = buddy->qqnumber;
     TpHandle handle = tp_handle_ensure (contact_repo, name, NULL, NULL);
     LwqqFriendCategory* cate = NULL;
     cate = lwqq_category_find_by_id(lc, buddy->cate_index);
