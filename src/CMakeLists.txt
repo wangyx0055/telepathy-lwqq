@@ -8,6 +8,7 @@ set(SRC
     captcha.c
     presence.c
     aliasing.c
+    avatar.c
     )
 
 include_directories(

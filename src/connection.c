@@ -26,6 +26,7 @@
 #include "contact-list.h"
 #include "presence.h"
 #include "aliasing.h"
+#include "avatar.h"
 
 #include <string.h>
 #include <time.h>
@@ -51,6 +52,8 @@ G_DEFINE_TYPE_WITH_CODE(LwqqConnection,
     TP_TYPE_BASE_CONNECTION,
     G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_ALIASING,
        aliasing_iface_init);
+    G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_AVATARS,
+       avatars_iface_init);
     G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_CONTACTS,
        tp_contacts_mixin_iface_init);
     G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_CONTACT_LIST,
@@ -86,14 +89,12 @@ struct _LwqqConnectionPrivate {
 };
 
 static const gchar * interfaces_always_present[] = {
-	/*TP_IFACE_CONNECTION_INTERFACE_CONTACT_INFO,
-	LWQQ_IFACE_CONNECTION_INTERFACE_RENAMING,
-	TP_IFACE_CONNECTION_INTERFACE_REQUESTS,*/
 	TP_IFACE_CONNECTION_INTERFACE_CONTACTS,
    TP_IFACE_CONNECTION_INTERFACE_CONTACT_LIST,
    TP_IFACE_CONNECTION_INTERFACE_PRESENCE,
    TP_IFACE_CONNECTION_INTERFACE_SIMPLE_PRESENCE,
 	TP_IFACE_CONNECTION_INTERFACE_ALIASING,
+   TP_IFACE_CONNECTION_INTERFACE_AVATARS,
 	NULL};
 
 const gchar * const *lwqq_connection_get_implemented_interfaces (void) {
@@ -101,10 +102,20 @@ const gchar * const *lwqq_connection_get_implemented_interfaces (void) {
 	return interfaces_always_present;
 }
 
+static TpDBusPropertiesMixinIfaceImpl prop_interfaces[] = {
+   { TP_IFACE_CONNECTION_INTERFACE_AVATARS,
+      avatars_properties_getter,
+      NULL,
+      NULL,
+   },
+   { NULL }
+};
+
 enum
 {
   ALIAS_UPDATED,
   PRESENCE_UPDATED,
+  AVATAR_UPDATED,
   N_SIGNALS
 };
 
@@ -428,34 +439,8 @@ lwqq_connection_constructed (GObject *object)
 
     presence_init(object);
     aliasing_init(object);
+    avatars_init(object);
 }
-
-#if 0
-static GObject *
-lwqq_connection_constructor (GType type,
-                             guint n_construct_properties,
-                             GObjectConstructParam *construct_params)
-{
-    LwqqConnection *self = LWQQ_CONNECTION (
-            G_OBJECT_CLASS (lwqq_connection_parent_class)->constructor (
-                type, n_construct_properties, construct_params));
-    TpBaseConnection *base_conn = TP_BASE_CONNECTION (self);
-    GObject *object = (GObject *) self;
-    LwqqConnectionPrivate *priv = self->priv;
-
-   // DEBUG ("Post-construction: (LwqqConnection *)%p", self);
-
-    //priv->dispose_has_run = FALSE;
-
-    //priv->disconnecting = FALSE;
-
-    tp_contacts_mixin_init (object,
-        G_STRUCT_OFFSET (LwqqConnection, contacts));
-    tp_base_connection_register_with_contacts_mixin (base_conn);
-    tp_base_contact_list_mixin_register_with_contacts_mixin (base_conn);
-    return self;
-}
-#endif
 
 static void set_property(GObject *obj, guint prop_id, const GValue *value, GParamSpec *pspec) {
 	LwqqConnection *self = LWQQ_CONNECTION(obj);
@@ -493,17 +478,6 @@ static void get_property(GObject *obj, guint prop_id, GValue *value, GParamSpec 
 	}
 }
 
-
-static GPtrArray* _iface_get_interfaces_always_present(TpBaseConnection* self)
-{
-   GPtrArray* interfaces;
-
-   interfaces = TP_BASE_CONNECTION_CLASS(lwqq_connection_parent_class)
-      ->get_interfaces_always_present(self);
-
-   g_ptr_array_add(interfaces, TP_IFACE_CONNECTION_INTERFACE_CONTACT_LIST);
-   return interfaces;
-}
 
 static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
@@ -574,19 +548,27 @@ static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
     */
 	//lwqq_contact_info_class_init(klass);
 
-    tp_contacts_mixin_class_init (object_class,
-            G_STRUCT_OFFSET (LwqqConnectionClass, contacts_class));
-    tp_base_contact_list_mixin_class_init (parent_class);
-    presence_class_init(klass);
+   //prop_interfaces[0].props = avatars_properties;
+   //klass->properties_class.interfaces = prop_interfaces;
 
-    signals[PRESENCE_UPDATED] = g_signal_new("presence-update",
-          G_TYPE_FROM_CLASS(klass), G_SIGNAL_RUN_LAST, 0, NULL, NULL,
-          g_cclosure_marshal_VOID__UINT,
-          G_TYPE_NONE, 1,G_TYPE_UINT);
-    signals[ALIAS_UPDATED] = g_signal_new ("alias-updated",
-          G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST, 0, NULL, NULL,
-          g_cclosure_marshal_VOID__UINT, 
-          G_TYPE_NONE, 1, G_TYPE_UINT);
+   tp_contacts_mixin_class_init (object_class,
+         G_STRUCT_OFFSET (LwqqConnectionClass, contacts_class));
+   tp_base_contact_list_mixin_class_init (parent_class);
+   presence_class_init(klass);
+
+   signals[PRESENCE_UPDATED] = g_signal_new("presence-update",
+         G_TYPE_FROM_CLASS(klass), G_SIGNAL_RUN_LAST, 0, NULL, NULL,
+         g_cclosure_marshal_VOID__UINT,
+         G_TYPE_NONE, 1,G_TYPE_UINT);
+   signals[ALIAS_UPDATED] = g_signal_new ("alias-updated",
+         G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST, 0, NULL, NULL,
+         g_cclosure_marshal_VOID__UINT, 
+         G_TYPE_NONE, 1, G_TYPE_UINT);
+   /* "avatar-updated" is used by system */
+   signals[AVATAR_UPDATED] = g_signal_new ("lwqq-avatar-updated",
+         G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST, 0, NULL, NULL,
+         g_cclosure_marshal_VOID__UINT_POINTER, 
+         G_TYPE_NONE, 2, G_TYPE_UINT,G_TYPE_POINTER);
 }
 
 
