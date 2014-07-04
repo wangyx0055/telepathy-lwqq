@@ -43,16 +43,17 @@ const TpPresenceStatusSpec* lwqq_contact_list_presence_statuses()
 }
 
 static void contact_list_mutable_init (TpMutableContactListInterface *iface);
+static void contact_group_list_iface_init (TpContactGroupListInterface *);
 
 G_DEFINE_TYPE_WITH_CODE(LwqqContactList,
     lwqq_contact_list,
     TP_TYPE_BASE_CONTACT_LIST,
     G_IMPLEMENT_INTERFACE (TP_TYPE_MUTABLE_CONTACT_LIST,
-      contact_list_mutable_init)
+       contact_list_mutable_init);
+    G_IMPLEMENT_INTERFACE (TP_TYPE_CONTACT_GROUP_LIST,
+       contact_group_list_iface_init)
     /*G_IMPLEMENT_INTERFACE (TP_TYPE_CONTACT_GROUP_LIST,
       contact_list_groups_init);
-    G_IMPLEMENT_INTERFACE (TP_TYPE_MUTABLE_CONTACT_GROUP_LIST,
-      contact_list_mutable_groups_init);
     G_IMPLEMENT_INTERFACE (TP_TYPE_BLOCKABLE_CONTACT_LIST,
       lwqq_contact_list_blockable_init)*/
       )
@@ -189,25 +190,6 @@ contact_list_store_contacts_async (TpBaseContactList *cl,
    tp_simple_async_report_success_in_idle((GObject*)self, callback, user_data,
          contact_list_store_contacts_async);
 }
-static void
-contact_list_mutable_init (TpMutableContactListInterface *iface)
-{
-    iface->can_change_contact_list = tp_base_contact_list_true_func;
-    iface->get_request_uses_message = tp_base_contact_list_true_func;
-
-    /* we use the default _finish functions, which assume a GSimpleAsyncResult */
-    iface->request_subscription_async  = contact_list_request_subscription_async;
-    iface->authorize_publication_async = contact_list_authorize_publication_async;
-    iface->store_contacts_async        = contact_list_store_contacts_async;
-    iface->remove_contacts_async       = contact_list_remove_contacts_async;
-
-    iface->unsubscribe_async           = contact_list_remove_contacts_async;
-    iface->unpublish_async             = contact_list_remove_contacts_async;
-    /* this is about the best we can do for unsubscribe/unpublish */
-    //vtable->store_contacts_async = lwqq_contact_list_store_contacts_async;
-    /* assume defaults: can change the contact list, and requests use the
-     * message */
-}
 
 static void 
 received_all_info(LwqqClient* lc)
@@ -228,7 +210,6 @@ received_all_info(LwqqClient* lc)
          lwdb_userdb_insert_buddy_info(db, &buddy);
       handle = tp_handle_ensure(contact_repo, buddy->qqnumber, NULL, NULL);
       //tp_base_contact_list_one_contact_changed(&self->parent, handle);
-      g_message("test:%s\n", buddy->qqnumber);
       //g_signal_emit_by_name(conn, "presence-update", 1, handle);
    }
    LIST_FOREACH(group,&lc->groups,entries){
@@ -573,3 +554,109 @@ guint lwqq_contact_list_get_presence(LwqqContactList* self,TpHandle contact)
     if(b) return to_presence(b->stat);
     else return 0;
 }
+
+static void
+contact_list_mutable_init (TpMutableContactListInterface *iface)
+{
+    iface->can_change_contact_list = tp_base_contact_list_true_func;
+    iface->get_request_uses_message = tp_base_contact_list_true_func;
+
+    /* we use the default _finish functions, which assume a GSimpleAsyncResult */
+    iface->request_subscription_async  = contact_list_request_subscription_async;
+    iface->authorize_publication_async = contact_list_authorize_publication_async;
+    iface->store_contacts_async        = contact_list_store_contacts_async;
+    iface->remove_contacts_async       = contact_list_remove_contacts_async;
+
+    iface->unsubscribe_async           = contact_list_remove_contacts_async;
+    iface->unpublish_async             = contact_list_remove_contacts_async;
+    /* this is about the best we can do for unsubscribe/unpublish */
+    //vtable->store_contacts_async = lwqq_contact_list_store_contacts_async;
+    /* assume defaults: can change the contact list, and requests use the
+     * message */
+}
+//====================CONTACT GROUP IMPLEMENTATION====================//
+static GStrv
+contact_list_dup_groups (TpBaseContactList *contact_list)
+{
+    LwqqContactList *self = LWQQ_CONTACT_LIST (contact_list);
+    LwqqConnection *conn = LWQQ_CONNECTION (self->priv->conn);
+    LwqqClient* lc = conn->lc;
+
+    GPtrArray *tags = g_ptr_array_new();
+    GHashTableIter iter;
+    gpointer tag;
+    LwqqFriendCategory* cate;
+
+    LIST_FOREACH(cate, &lc->categories, entries){
+       g_ptr_array_add(tags, g_strdup(cate->name));
+    }
+    g_ptr_array_add (tags, NULL);
+    return (GStrv) g_ptr_array_free (tags, FALSE);
+}
+
+static TpHandleSet *
+contact_list_dup_group_members (TpBaseContactList *contact_list,
+        const gchar *group)
+{
+    LwqqContactList *self = LWQQ_CONTACT_LIST (contact_list);
+    LwqqConnection *conn = LWQQ_CONNECTION (self->priv->conn);
+    LwqqClient* lc = conn->lc;
+
+    LwqqFriendCategory* cate = lwqq_category_find_by_name(lc, group);
+
+    TpIntsetFastIter iter;
+    TpHandle member;
+    TpHandleSet *members = tp_handle_set_new (self->priv->contact_repo);
+
+    tp_intset_fast_iter_init (&iter, tp_handle_set_peek (self->priv->contacts));
+
+    LwqqBuddy* buddy;
+    LIST_FOREACH(buddy, &lc->friends, entries){
+       if(buddy->cate_index == cate->index){
+          TpHandle contact = tp_handle_lookup(self->priv->contact_repo,
+                buddy->qqnumber, NULL, NULL);
+          tp_handle_set_add(members, contact);
+       }
+    }
+
+    return members;
+}
+
+static GStrv
+contact_list_dup_contact_groups (TpBaseContactList *contact_list,
+        TpHandle contact)
+{
+    LwqqContactList *self = LWQQ_CONTACT_LIST (contact_list);
+    LwqqConnection *conn = LWQQ_CONNECTION (self->priv->conn);
+    LwqqClient* lc = conn->lc;
+
+    GPtrArray *tags = g_ptr_array_sized_new (2);
+
+
+    const char* qq = tp_handle_inspect(self->priv->contact_repo, contact);
+    LwqqBuddy* buddy = lwqq_buddy_find_buddy_by_qqnumber(lc, qq);
+    if(buddy != NULL){
+       LwqqFriendCategory* cate = lwqq_category_find_by_id(lc, buddy->cate_index);
+       g_ptr_array_add (tags, g_strdup (cate->name));
+    }
+    g_ptr_array_add (tags, NULL);
+    return (GStrv) g_ptr_array_free (tags, FALSE);
+}
+
+static gchar *
+contact_list_normalize_group (TpBaseContactList *contact_list,
+      const gchar *id)
+{
+   return g_utf8_normalize (id, -1, G_NORMALIZE_ALL_COMPOSE);
+}
+
+static void
+contact_group_list_iface_init (TpContactGroupListInterface *iface)
+{
+    iface->dup_groups = contact_list_dup_groups;
+    iface->dup_group_members = contact_list_dup_group_members;
+    iface->dup_contact_groups = contact_list_dup_contact_groups;
+    iface->has_disjoint_groups = tp_base_contact_list_true_func;
+    iface->normalize_group = contact_list_normalize_group;
+}
+//====================CONTACT GROUP IMPLEMENTATION====================//
