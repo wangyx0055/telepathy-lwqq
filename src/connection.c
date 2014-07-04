@@ -44,7 +44,6 @@
 
 #include <lwqq/lwqq.h>
 #include <lwqq/lwdb.h>
-#include <lwqq/lwjs.h>
 
 #define LOCAL_HASH_JS(buf)  (snprintf(buf,sizeof(buf),"%s"LWQQ_PATH_SEP"hash.js",\
             lwdb_get_config_dir()),buf)
@@ -78,6 +77,8 @@ enum {
 struct _LwqqConnectionPrivate {
    char* username;
    char* password;
+
+   LwdbUserDB* db;
 
    TpHandleRepoIface* contact_repo;
    TpHandleSet* contacts;
@@ -196,7 +197,7 @@ static void login_into_server(LwqqClient* lc,LwqqErrorCode* err)
 {
     LwqqConnection* conn = lc->data;
     LwqqBuddy* buddy;
-    //tp_base_contact_list_set_list_received(&conn->contact_list->parent);
+
     tp_base_connection_change_status(&conn->parent,
             TP_CONNECTION_STATUS_CONNECTED,
             TP_CONNECTION_STATUS_REASON_REQUESTED);
@@ -308,13 +309,6 @@ static void login_into_server(LwqqClient* lc,LwqqErrorCode* err)
     lwqq_msglist_poll(lc->msg_list, flags);*/
 }
 
-LwqqAsyncEvent* lwqq_connection_get_friend_list(LwqqClient* lc,LwqqErrorCode err)
-{
-    if(!lwqq_client_valid(lc)) return;
-    LwqqConnection* conn = lc->data;
-
-    return lwqq_info_get_friends_info(lc, NULL, NULL);
-}
 
 static gboolean local_do_dispatch(gpointer data)
 {
@@ -369,13 +363,28 @@ static gboolean _iface_start_connecting(TpBaseConnection *self, GError **error) 
          TP_CONNECTION_STATUS_REASON_REQUESTED);
 
 	LwqqClient* lc = lwqq_client_new(priv->username,priv->password);
+   if(!lc) return FALSE;
 	lwqq_log_set_level(4);
    register_events(lc);
    lc->dispatch = local_dispatch;
    lc->data = conn;
+
+   LwdbUserDB* db = lwdb_userdb_new(lc->myself->qqnumber, NULL, 0);
+   if(!db) return FALSE;
+   const char* last_hash = lwdb_userdb_read(db, "last_hash");
+   if(last_hash) lwqq_hash_set_beg(lc, last_hash);
+   
+
    lwqq_login(lc, LWQQ_STATUS_ONLINE, NULL);
 	conn->lc = lc;
+   conn->priv->db = db;
 	return TRUE;
+}
+
+LwdbUserDB* lwqq_connection_get_db(LwqqConnection* conn)
+{
+   if(!conn) return NULL;
+   return conn->priv->db;
 }
 
 //=================CONNECTION CLASS DEFINE======================//

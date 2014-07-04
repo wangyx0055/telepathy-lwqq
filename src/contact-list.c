@@ -209,24 +209,146 @@ contact_list_mutable_init (TpMutableContactListInterface *iface)
      * message */
 }
 
+static void 
+received_all_info(LwqqClient* lc)
+{
+   TpHandle handle;
+   LwqqConnection* conn = lc->data;
+   TpHandleRepoIface* contact_repo = 
+      tp_base_connection_get_handles(TP_BASE_CONNECTION(conn), TP_HANDLE_TYPE_CONTACT);
+
+   tp_base_contact_list_set_list_received(TP_BASE_CONTACT_LIST(conn->contact_list));
+
+   LwqqBuddy* buddy;
+   LwqqGroup* group;
+   LwdbUserDB* db = lwqq_connection_get_db(conn);
+   lwdb_userdb_begin(db);
+   LIST_FOREACH(buddy,&lc->friends,entries) {
+      if(buddy->last_modify == -1 || buddy->last_modify == 0)
+         lwdb_userdb_insert_buddy_info(db, &buddy);
+      handle = tp_handle_ensure(contact_repo, buddy->uin, NULL, NULL);
+      //tp_base_contact_list_one_contact_changed(&self->parent, handle);
+      g_message("test:%s\n", buddy->uin);
+      //g_signal_emit_by_name(conn, "presence-update", 1, handle);
+   }
+   LIST_FOREACH(group,&lc->groups,entries){
+      if(group->last_modify == -1 || group->last_modify == 0)
+         lwdb_userdb_insert_group_info(db, &group);
+   }
+   lwdb_userdb_commit(db);
+
+   // wait all download finished, start msg pool, to get all qqnumber
+   lwqq_msglist_poll(lc->msg_list, 0);
+}
 
 static void 
-received_friend_list(LwqqContactList* self)
+request_detaile_info(LwqqClient* lc)
 {
-    LwqqClient* lc = self->priv->conn->lc;
-    LwqqBuddy* buddy;
-    TpHandle handle;
-    TpHandleRepoIface* contact_repo = self->priv->contact_repo;
+   LwqqConnection* conn = lc->data;
+   LwdbUserDB* db = lwqq_connection_get_db(conn);
 
-    tp_base_contact_list_set_list_received(TP_BASE_CONTACT_LIST(self));
+	lwdb_userdb_flush_buddies(db, 5, 5);
+	lwdb_userdb_flush_groups(db, 1, 10);
 
-    LIST_FOREACH(buddy,&lc->friends,entries){
-        handle = tp_handle_ensure(contact_repo, buddy->uin, NULL, NULL);
-        //tp_base_contact_list_one_contact_changed(&self->parent, handle);
-        g_message("test:%s\n", buddy->uin);
-        g_signal_emit_by_name(self, "presence-update", 1, handle);
-    }
+   lwdb_userdb_query_qqnumbers(db,lc);
 
+   LwqqAsyncEvent* ev;
+	LwqqAsyncEvset* set = lwqq_async_evset_new();
+
+	LwqqBuddy* buddy;
+	LIST_FOREACH(buddy,&lc->friends,entries) {
+		lwdb_userdb_query_buddy(db, buddy);
+		if(!buddy->qqnumber){
+			ev = lwqq_info_get_friend_qqnumber(lc,buddy);
+			lwqq_async_evset_add_event(set, ev);
+		}
+		if(buddy->last_modify == 0 || buddy->last_modify == -1) {
+			ev = lwqq_info_get_single_long_nick(lc, buddy);
+			lwqq_async_evset_add_event(set, ev);
+			ev = lwqq_info_get_level(lc, buddy);
+			lwqq_async_evset_add_event(set, ev);
+			//if buddy is unknow we should update avatar in friend_come
+			//for better speed in first load
+			if(buddy->last_modify == LWQQ_LAST_MODIFY_RESET){
+				ev = lwqq_info_get_friend_avatar(lc,buddy);
+				lwqq_async_evset_add_event(set, ev);
+			}
+		}
+	}
+
+	LwqqGroup* group;
+	LIST_FOREACH(group,&lc->groups,entries) {
+		//LwqqAsyncEvset* set = NULL;
+		lwdb_userdb_query_group(db, group);
+		if(!group->account){
+			ev = lwqq_info_get_group_qqnumber(lc,group);
+			lwqq_async_evset_add_event(set, ev);
+		}
+		if(group->last_modify == -1 || group->last_modify == 0){
+			ev = lwqq_info_get_group_memo(lc, group);
+			lwqq_async_evset_add_event(set, ev);
+		}
+	}
+
+	LwqqGroup* discu;
+	LIST_FOREACH(discu,&lc->discus,entries){
+		if(discu->last_modify == LWQQ_LAST_MODIFY_UNKNOW)
+			// discu is imediately date, doesn't need get info from server, we can
+			// directly write it into database
+			lwdb_userdb_insert_discu_info(db, &discu);
+	}
+
+	lwqq_async_add_evset_listener(set, _C_(p,received_all_info,lc));
+}
+
+static void 
+request_other_list(LwqqAsyncEvent* event,LwqqClient* lc)
+{
+   if(!lwqq_client_valid(lc)) return;
+   LwqqConnection* conn = lc->data;
+	if(event->result != LWQQ_EC_OK){
+      tp_base_connection_change_status(TP_BASE_CONNECTION(conn), TP_CONNECTION_STATUS_DISCONNECTED, TP_CONNECTION_STATUS_REASON_NETWORK_ERROR);
+		/*
+		qq_account* ac = lc->data;
+      purple_connection_error_reason(ac->gc, 
+				PURPLE_CONNECTION_ERROR_NETWORK_ERROR, 
+				_("Get Group List Failed"));*/
+		return;
+	}
+	LwqqAsyncEvset* set = lwqq_async_evset_new();
+	LwqqAsyncEvent* ev;
+	ev = lwqq_info_get_discu_name_list(lc);
+	lwqq_async_evset_add_event(set,ev);
+	ev = lwqq_info_get_online_buddies(lc,NULL);
+	lwqq_async_evset_add_event(set,ev);
+   ev = lwqq_info_get_friend_detail_info(lc,lc->myself);
+   lwqq_async_evset_add_event(set,ev);
+
+	lwqq_async_add_evset_listener(set,_C_(p,request_detaile_info,lc));
+}
+
+static void 
+request_group_list(LwqqClient* lc)
+{
+   if(!lwqq_client_valid(lc)) return;
+   LwqqConnection* conn = lc->data;
+   LwdbUserDB* db = lwqq_connection_get_db(conn);
+
+   const LwqqHashEntry* succ_hash = lwqq_hash_get_last(lc);
+   lwdb_userdb_write(db, "last_hash", succ_hash->name);
+   LwqqAsyncEvent* ev;
+   ev = lwqq_info_get_group_name_list(lc, succ_hash->func, succ_hash->data);
+   lwqq_async_add_event_listener(ev, _C_(2p, request_other_list, ev, lc));
+}
+
+static void
+request_friend_list(LwqqClient* lc,LwqqErrorCode err)
+{
+    if(!lwqq_client_valid(lc)) return;
+    LwqqConnection* conn = lc->data;
+
+    LwqqAsyncEvent* ev = lwqq_info_get_friends_info(lc, NULL, NULL);
+    lwqq_async_add_event_listener(ev, _C_(p,request_group_list,lc));
 }
 
 static void
@@ -238,8 +360,7 @@ status_changed_cb (TpBaseConnection *conn,
     switch(status){
         case TP_CONNECTION_STATUS_CONNECTED:
             tp_base_contact_list_set_list_pending(TP_BASE_CONTACT_LIST(self));
-            LwqqAsyncEvent* ev = lwqq_connection_get_friend_list(self->priv->conn->lc, 0);
-            lwqq_async_add_event_listener(ev, _C_(p,received_friend_list,self));
+            request_friend_list(self->priv->conn->lc, 0);
             break;
         case TP_CONNECTION_STATUS_DISCONNECTED:
             break;

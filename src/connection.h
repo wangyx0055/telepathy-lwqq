@@ -25,6 +25,7 @@
 #include <telepathy-glib/telepathy-glib.h>
 
 #include "contact-list.h"
+#include <lwqq/lwdb.h>
 
 G_BEGIN_DECLS
 
@@ -80,6 +81,6 @@ G_END_DECLS
 const gchar * const *lwqq_connection_get_implemented_interfaces (void);
 const gchar * lwqq_connection_handle_inspect (LwqqConnection *conn,
         TpHandleType handle_type, TpHandle handle);
-LwqqAsyncEvent* lwqq_connection_get_friend_list(LwqqClient* lc,LwqqErrorCode err);
+LwdbUserDB* lwqq_connection_get_db(LwqqConnection* conn);
 
 #endif /* #ifndef __LWQQ_CONNECTION_H__*/

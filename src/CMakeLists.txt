@@ -12,7 +12,7 @@ set(SRC
 include_directories(
     ${PROJECT_BINARY_DIR}
     ${TP_GLIB_INCLUDE_DIRS}
-	/usr/local/include/lwqq
+    /usr/local/include/lwqq
     )
 
 add_executable(telepathy-lwqq ${SRC})
