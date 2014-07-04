@@ -24,6 +24,7 @@
 #include "connection.h"
 #include "im-manager.h"
 #include "contact-list.h"
+#include "presence.h"
 
 #include <string.h>
 #include <time.h>
@@ -79,6 +80,7 @@ struct _LwqqConnectionPrivate {
    char* password;
 
    TpHandleRepoIface* contact_repo;
+   TpHandleSet* contacts;
 
    /* so we can pop up a SASL channel asking for the password */
    TpSimplePasswordManager *password_manager;
@@ -90,6 +92,9 @@ static const gchar * interfaces_always_present[] = {
 	LWQQ_IFACE_CONNECTION_INTERFACE_RENAMING,
 	TP_IFACE_CONNECTION_INTERFACE_REQUESTS,*/
 	TP_IFACE_CONNECTION_INTERFACE_CONTACTS,
+   TP_IFACE_CONNECTION_INTERFACE_CONTACT_LIST,
+   TP_IFACE_CONNECTION_INTERFACE_PRESENCE,
+   TP_IFACE_CONNECTION_INTERFACE_SIMPLE_PRESENCE,
 	NULL};
 
 const gchar * const *lwqq_connection_get_implemented_interfaces (void) {
@@ -97,6 +102,14 @@ const gchar * const *lwqq_connection_get_implemented_interfaces (void) {
 	return interfaces_always_present;
 }
 
+enum
+{
+  ALIAS_UPDATED,
+  PRESENCE_UPDATED,
+  N_SIGNALS
+};
+
+static guint signals[N_SIGNALS] = { 0 };
 
 static gchar*
 _contact_normalize (TpHandleRepoIface *repo,
@@ -121,25 +134,6 @@ static void _iface_create_handle_repos(TpBaseConnection *self,
 }
 
 
-static void
-presence_updated_cb (LwqqContactList *contact_list,
-                     TpHandle contact,
-                     LwqqConnection *self)
-{
-  TpBaseConnection *base = (TpBaseConnection *) self;
-  TpPresenceStatus *status;
-  LwqqClient* lc = self->lc;
-
-  /* we ignore the presence indicated by the contact list for our own handle */
-  if (contact == tp_base_connection_get_self_handle (base))
-    return;
-
-
-  status = tp_presence_status_new ( lwqq_contact_list_get_presence(contact_list, contact), NULL);
-  tp_presence_mixin_emit_one_presence_update ((GObject *) self, contact,
-          status);
-  tp_presence_status_free (status);
-}
 
 static GPtrArray *_iface_create_channel_managers(TpBaseConnection *base) {
 	LwqqConnection *self = LWQQ_CONNECTION (base);
@@ -155,13 +149,12 @@ static GPtrArray *_iface_create_channel_managers(TpBaseConnection *base) {
 	g_ptr_array_add(managers, manager);
 	*/
 
-	priv->password_manager = tp_simple_password_manager_new(base);
-	g_ptr_array_add(managers, priv->password_manager);
+   priv->password_manager = tp_simple_password_manager_new(base);
+   g_ptr_array_add(managers, priv->password_manager);
    self->contact_list =
       LWQQ_CONTACT_LIST(g_object_new(LWQQ_TYPE_CONTACT_LIST,"connection",self,NULL));
    g_ptr_array_add(managers, self->contact_list);
 
-    g_signal_connect(self->contact_list, "presence-update", (GCallback)presence_updated_cb, self);
 
 	/*
 	manager = g_object_new(IDLE_TYPE_ROOMLIST_MANAGER, "connection", self, NULL);
@@ -345,13 +338,15 @@ static void register_events(LwqqClient* lc)
 static gboolean _iface_start_connecting(TpBaseConnection *self, GError **error) {
 	LwqqConnection *conn = LWQQ_CONNECTION(self);
 	LwqqConnectionPrivate *priv = conn->priv;
-   TpHandleRepoIface *contact_handles =
+   TpHandleRepoIface *contact_repo =
       tp_base_connection_get_handles (self, TP_HANDLE_TYPE_CONTACT);
 
-    self->self_handle = tp_handle_ensure (contact_handles,
+    self->self_handle = tp_handle_ensure (contact_repo,
         priv->username, NULL, NULL);
     if (!self->self_handle)
         return FALSE;
+    conn->priv->contact_repo = contact_repo;
+    conn->priv->contacts = tp_handle_set_new(contact_repo);
 
 	//g_assert(priv->nickname != NULL);
 
@@ -424,14 +419,13 @@ lwqq_connection_constructed (GObject *object)
     tp_base_connection_register_with_contacts_mixin (base);
     tp_base_contact_list_mixin_register_with_contacts_mixin (base);
 
+    presence_init(object);
+
     /*tp_contacts_mixin_add_contact_attributes_iface (object,
             TP_IFACE_CONNECTION_INTERFACE_ALIASING,
             aliasing_fill_contact_attributes);
             */
 
-    tp_presence_mixin_init (object,
-            G_STRUCT_OFFSET (LwqqConnection, presence));
-    tp_presence_mixin_simple_presence_register_with_contacts_mixin (object);
 }
 
 #if 0
@@ -498,82 +492,6 @@ static void get_property(GObject *obj, guint prop_id, GValue *value, GParamSpec 
 }
 
 
-static gboolean
-status_available (GObject *object,
-                  guint index_)
-{
-  TpBaseConnection *base = TP_BASE_CONNECTION (object);
-
-  return tp_base_connection_check_connected (base, NULL);
-}
-
-static GHashTable *
-get_contact_statuses (GObject *object,
-                      const GArray *contacts,
-                      GError **error)
-{
-    LwqqConnection *self = LWQQ_CONNECTION(object);
-    TpBaseConnection *base = TP_BASE_CONNECTION (object);
-    LwqqClient* lc = self->lc;
-    guint i;
-    GHashTable *result = g_hash_table_new_full (g_direct_hash, g_direct_equal,
-            NULL, (GDestroyNotify) tp_presence_status_free);
-
-    TpHandleRepoIface* contact_repo = tp_base_connection_get_handles(base, TP_HANDLE_TYPE_CONTACT);
-
-    for (i = 0; i < contacts->len; i++)
-    {
-        TpHandle contact = g_array_index (contacts, guint, i);
-        LwqqStatus presence;
-        GHashTable *parameters;
-
-        /* we get our own status from the connection, and everyone else's status
-         * from the contact lists */
-        if (contact == tp_base_connection_get_self_handle (base)) 
-            presence = to_presence(lc->myself->stat);
-        else
-            presence = lwqq_contact_list_get_presence(self->contact_list, contact);
-
-        parameters = g_hash_table_new_full (g_str_hash,
-                g_str_equal, NULL, (GDestroyNotify) tp_g_value_slice_free);
-        g_hash_table_insert (result, GUINT_TO_POINTER (contact),
-                tp_presence_status_new (presence, parameters));
-        g_hash_table_unref (parameters);
-    }
-
-    return result;
-}
-
-
-static gboolean
-set_own_status (GObject *object,
-                const TpPresenceStatus *status,
-                GError **error)
-{
-    LwqqConnection* self = LWQQ_CONNECTION(object);
-    TpBaseConnection *base = TP_BASE_CONNECTION (object);
-    LwqqClient* lc = self->lc;
-    GHashTable *presences;
-
-    LwqqStatus state = status->index;
-
-    LWQQ_SYNC_BEGIN(lc);
-    lwqq_info_change_status(lc, state);
-    LWQQ_SYNC_END(lc);
-
-    if(lc->stat == state){
-        presences = g_hash_table_new_full (g_direct_hash, g_direct_equal,
-                NULL, NULL);
-        g_hash_table_insert (presences,
-                GUINT_TO_POINTER (tp_base_connection_get_self_handle (base)),
-                (gpointer) status);
-        tp_presence_mixin_emit_presence_update (object, presences);
-        g_hash_table_unref (presences);
-        return TRUE;
-    }else
-        return FALSE;
-}
-
 static GPtrArray* _iface_get_interfaces_always_present(TpBaseConnection* self)
 {
    GPtrArray* interfaces;
@@ -601,8 +519,8 @@ static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
 	parent_class->create_channel_managers = _iface_create_channel_managers;
 	parent_class->shut_down = _iface_shut_down;
 	parent_class->start_connecting = _iface_start_connecting;
-   parent_class->get_interfaces_always_present = _iface_get_interfaces_always_present;
-    /*
+   parent_class->interfaces_always_present = interfaces_always_present;
+   /*
 	parent_class->get_unique_connection_name = _iface_get_unique_connection_name;
 	parent_class->connecting = NULL;
 	parent_class->connected = NULL;
@@ -656,15 +574,13 @@ static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
 
     tp_contacts_mixin_class_init (object_class,
             G_STRUCT_OFFSET (LwqqConnectionClass, contacts_class));
-
-    tp_presence_mixin_class_init (object_class,
-            G_STRUCT_OFFSET (LwqqConnectionClass, presence_class),
-            status_available, get_contact_statuses, set_own_status,
-            lwqq_contact_list_presence_statuses());
-    tp_presence_mixin_simple_presence_init_dbus_properties (object_class);
-
     tp_base_contact_list_mixin_class_init (parent_class);
+    presence_class_init(klass);
 
+    signals[PRESENCE_UPDATED] = g_signal_new("presence-update",
+            G_TYPE_FROM_CLASS(klass), G_SIGNAL_RUN_LAST, 0, NULL, NULL,
+            g_cclosure_marshal_VOID__UINT,
+            G_TYPE_NONE, 1,G_TYPE_UINT);
 }
 
 

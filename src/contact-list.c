@@ -24,14 +24,6 @@ struct _LwqqContactListPrivate {
 };
 
 
-enum
-{
-  ALIAS_UPDATED,
-  PRESENCE_UPDATED,
-  N_SIGNALS
-};
-
-static guint signals[N_SIGNALS] = { 0 };
 
 static const TpPresenceStatusSpec _statuses[] = {
       { "logout", TP_CONNECTION_PRESENCE_TYPE_UNSET, FALSE, NULL },
@@ -193,6 +185,9 @@ contact_list_store_contacts_async (TpBaseContactList *cl,
     GAsyncReadyCallback callback,
     gpointer user_data)
 {
+   LwqqContactList* self = LWQQ_CONTACT_LIST(cl);
+   tp_simple_async_report_success_in_idle((GObject*)self, callback, user_data,
+         contact_list_store_contacts_async);
 }
 static void
 contact_list_mutable_init (TpMutableContactListInterface *iface)
@@ -227,9 +222,9 @@ received_friend_list(LwqqContactList* self)
 
     LIST_FOREACH(buddy,&lc->friends,entries){
         handle = tp_handle_ensure(contact_repo, buddy->uin, NULL, NULL);
-        tp_base_contact_list_one_contact_changed(&self->parent, handle);
+        //tp_base_contact_list_one_contact_changed(&self->parent, handle);
         g_message("test:%s\n", buddy->uin);
-        //g_signal_emit(self, signals[PRESENCE_UPDATED], 0,handle);
+        g_signal_emit_by_name(self, "presence-update", 1, handle);
     }
 
 }
@@ -344,8 +339,8 @@ contact_list_dup_states (TpBaseContactList *cl,
     LwqqContactList *self = LWQQ_CONTACT_LIST (cl);
 
     g_message("Add State %s\n",tp_handle_inspect(self->priv->contact_repo, contact));
-    if(subscribe_out)*subscribe_out = TP_SUBSCRIPTION_STATE_NO;
-    if(publish_out)*publish_out = TP_SUBSCRIPTION_STATE_NO;
+    if(subscribe_out)*subscribe_out = TP_SUBSCRIPTION_STATE_YES;
+    if(publish_out)*publish_out = TP_SUBSCRIPTION_STATE_YES;
     if(publish_request_out) *publish_request_out = g_strdup("");
 #if 0
     LwqqContactList *self = LWQQ_CONTACT_LIST (cl);
@@ -419,10 +414,6 @@ lwqq_contact_list_class_init (LwqqContactListClass *klass)
 
     g_type_class_add_private (object_class,
                               sizeof(LwqqContactListPrivate));
-
-    signals[PRESENCE_UPDATED] = g_signal_new("presence-update",
-            G_TYPE_FROM_CLASS(klass), G_SIGNAL_RUN_LAST, 0, NULL, NULL, NULL,
-            G_TYPE_NONE, 1,G_TYPE_UINT);
 }
 
 
@@ -458,6 +449,8 @@ lwqq_contact_list_add_buddy(LwqqClient* lc,LwqqBuddy* buddy)
 guint lwqq_contact_list_get_presence(LwqqContactList* self,TpHandle contact)
 {
     LwqqClient* lc = self->priv->conn->lc;
-    LwqqBuddy* b = lwqq_buddy_find_buddy_by_uin(lc, tp_handle_inspect(self->priv->contact_repo, contact));
-    return to_presence(b->stat);
+    const char* uin = tp_handle_inspect(self->priv->contact_repo, contact);
+    LwqqBuddy* b = lwqq_buddy_find_buddy_by_uin(lc, uin);
+    if(b) return to_presence(b->stat);
+    else return 0;
 }

@@ -6,6 +6,7 @@ set(SRC
     protocol.c 
     im-manager.c
     captcha.c
+    presence.c
     )
 
 include_directories(
