@@ -7,6 +7,7 @@ set(SRC
     im-manager.c
     captcha.c
     presence.c
+    aliasing.c
     )
 
 include_directories(
@@ -18,6 +19,7 @@ include_directories(
 add_executable(telepathy-lwqq ${SRC})
 
 target_link_libraries(telepathy-lwqq 
+    ${DBUS_GLIB_LIBRARIES}
     ${TP_GLIB_LIBRARIES}
     ${GOBJECT_LIBRARIES}
     ${GLIB_LIBRARIES}

@@ -25,6 +25,7 @@
 #include "im-manager.h"
 #include "contact-list.h"
 #include "presence.h"
+#include "aliasing.h"
 
 #include <string.h>
 #include <time.h>
@@ -45,26 +46,23 @@
 #include <lwqq/lwqq.h>
 #include <lwqq/lwdb.h>
 
-#define LOCAL_HASH_JS(buf)  (snprintf(buf,sizeof(buf),"%s"LWQQ_PATH_SEP"hash.js",\
-            lwdb_get_config_dir()),buf)
-#define GLOBAL_HASH_JS(buf) (snprintf(buf,sizeof(buf),"%s"LWQQ_PATH_SEP"hash.js",\
-            GLOBAL_DATADIR),buf)
-
 G_DEFINE_TYPE_WITH_CODE(LwqqConnection,
     lwqq_connection,
     TP_TYPE_BASE_CONNECTION,
+    G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_ALIASING,
+       aliasing_iface_init);
     G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_CONTACTS,
-      tp_contacts_mixin_iface_init);
+       tp_contacts_mixin_iface_init);
     G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_CONTACT_LIST,
-      tp_base_contact_list_mixin_list_iface_init);
+       tp_base_contact_list_mixin_list_iface_init);
     G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_CONTACT_GROUPS,
-      tp_base_contact_list_mixin_groups_iface_init);
+       tp_base_contact_list_mixin_groups_iface_init);
     G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_CONTACT_BLOCKING,
-      tp_base_contact_list_mixin_blocking_iface_init);
+       tp_base_contact_list_mixin_blocking_iface_init);
     G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_PRESENCE,
-      tp_presence_mixin_iface_init);
+       tp_presence_mixin_iface_init);
     G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_SIMPLE_PRESENCE,
-      tp_presence_mixin_simple_presence_iface_init)
+       tp_presence_mixin_simple_presence_iface_init)
     );
 
 enum {
@@ -88,14 +86,14 @@ struct _LwqqConnectionPrivate {
 };
 
 static const gchar * interfaces_always_present[] = {
-	/*TP_IFACE_CONNECTION_INTERFACE_ALIASING,
-	TP_IFACE_CONNECTION_INTERFACE_CONTACT_INFO,
+	/*TP_IFACE_CONNECTION_INTERFACE_CONTACT_INFO,
 	LWQQ_IFACE_CONNECTION_INTERFACE_RENAMING,
 	TP_IFACE_CONNECTION_INTERFACE_REQUESTS,*/
 	TP_IFACE_CONNECTION_INTERFACE_CONTACTS,
    TP_IFACE_CONNECTION_INTERFACE_CONTACT_LIST,
    TP_IFACE_CONNECTION_INTERFACE_PRESENCE,
    TP_IFACE_CONNECTION_INTERFACE_SIMPLE_PRESENCE,
+	TP_IFACE_CONNECTION_INTERFACE_ALIASING,
 	NULL};
 
 const gchar * const *lwqq_connection_get_implemented_interfaces (void) {
@@ -429,12 +427,7 @@ lwqq_connection_constructed (GObject *object)
     tp_base_contact_list_mixin_register_with_contacts_mixin (base);
 
     presence_init(object);
-
-    /*tp_contacts_mixin_add_contact_attributes_iface (object,
-            TP_IFACE_CONNECTION_INTERFACE_ALIASING,
-            aliasing_fill_contact_attributes);
-            */
-
+    aliasing_init(object);
 }
 
 #if 0
@@ -587,9 +580,13 @@ static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
     presence_class_init(klass);
 
     signals[PRESENCE_UPDATED] = g_signal_new("presence-update",
-            G_TYPE_FROM_CLASS(klass), G_SIGNAL_RUN_LAST, 0, NULL, NULL,
-            g_cclosure_marshal_VOID__UINT,
-            G_TYPE_NONE, 1,G_TYPE_UINT);
+          G_TYPE_FROM_CLASS(klass), G_SIGNAL_RUN_LAST, 0, NULL, NULL,
+          g_cclosure_marshal_VOID__UINT,
+          G_TYPE_NONE, 1,G_TYPE_UINT);
+    signals[ALIAS_UPDATED] = g_signal_new ("alias-updated",
+          G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST, 0, NULL, NULL,
+          g_cclosure_marshal_VOID__UINT, 
+          G_TYPE_NONE, 1, G_TYPE_UINT);
 }
 
 
