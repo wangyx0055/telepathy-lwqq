@@ -54,6 +54,8 @@ G_DEFINE_TYPE_WITH_CODE(LwqqConnection,
        aliasing_iface_init);
     G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_AVATARS,
        avatars_iface_init);
+    G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_DBUS_PROPERTIES,
+       tp_dbus_properties_mixin_iface_init);
     G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_CONTACTS,
        tp_contacts_mixin_iface_init);
     G_IMPLEMENT_INTERFACE (TP_TYPE_SVC_CONNECTION_INTERFACE_CONTACT_LIST,
@@ -548,8 +550,10 @@ static void lwqq_connection_class_init(LwqqConnectionClass *klass) {
     */
 	//lwqq_contact_info_class_init(klass);
 
-   //prop_interfaces[0].props = avatars_properties;
-   //klass->properties_class.interfaces = prop_interfaces;
+   prop_interfaces[0].props = avatars_properties;
+   klass->properties_class.interfaces = prop_interfaces;
+   tp_dbus_properties_mixin_class_init(object_class,
+         G_STRUCT_OFFSET(LwqqConnectionClass, properties_class));
 
    tp_contacts_mixin_class_init (object_class,
          G_STRUCT_OFFSET (LwqqConnectionClass, contacts_class));

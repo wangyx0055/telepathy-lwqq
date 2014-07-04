@@ -37,6 +37,7 @@ struct _LwqqConnectionClass {
    TpBaseConnectionClass parent_class;
    TpContactsMixinClass contacts_class;
    TpPresenceMixinClass presence_class;
+   TpDBusPropertiesMixinClass properties_class;
 };
 
 struct _LwqqConnection {
