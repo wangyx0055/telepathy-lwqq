@@ -112,7 +112,7 @@ presence_updated_cb (LwqqConnection* conn,
 
 void presence_init(GObject* object)
 {
-   g_signal_connect(object, "presence-update", (GCallback)presence_updated_cb,
+   g_signal_connect(object, "presence-updated", (GCallback)presence_updated_cb,
          NULL);
    tp_presence_mixin_init (object,
          G_STRUCT_OFFSET (LwqqConnection, presence));
