@@ -9,6 +9,7 @@ set(SRC
     presence.c
     aliasing.c
     avatar.c
+    channel.c
     )
 
 include_directories(

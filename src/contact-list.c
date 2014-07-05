@@ -23,8 +23,6 @@ struct _LwqqContactListPrivate {
 
 };
 
-
-
 static const TpPresenceStatusSpec _statuses[] = {
       { "logout", TP_CONNECTION_PRESENCE_TYPE_UNSET, FALSE, NULL },
       { "available", TP_CONNECTION_PRESENCE_TYPE_AVAILABLE, TRUE, NULL },
@@ -52,11 +50,7 @@ G_DEFINE_TYPE_WITH_CODE(LwqqContactList,
        contact_list_mutable_init);
     G_IMPLEMENT_INTERFACE (TP_TYPE_CONTACT_GROUP_LIST,
        contact_group_list_iface_init)
-    /*G_IMPLEMENT_INTERFACE (TP_TYPE_CONTACT_GROUP_LIST,
-      contact_list_groups_init);
-    G_IMPLEMENT_INTERFACE (TP_TYPE_BLOCKABLE_CONTACT_LIST,
-      lwqq_contact_list_blockable_init)*/
-      )
+    )
 
 void
 lwqq_contact_list_request_subscription (LwqqContactList *self,
