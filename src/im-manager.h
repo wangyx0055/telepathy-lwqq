@@ -11,13 +11,13 @@ typedef struct _LwqqIMManagerClass LwqqIMManagerClass;
 typedef struct _LwqqIMManagerPrivate LwqqIMManagerPrivate;
 
 struct _LwqqIMManagerClass {
-	GObjectClass parent_class;
+   GObjectClass parent_class;
 };
 
 struct _LwqqIMManager {
-	GObject parent;
+   GObject parent;
 
-    LwqqIMManagerPrivate* priv;
+   LwqqIMManagerPrivate* priv;
 };
 
 GType lwqq_im_manager_get_type (void);

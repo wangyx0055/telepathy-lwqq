@@ -22,11 +22,11 @@
 #include "config.h"
 
 #include "connection.h"
-#include "im-manager.h"
 #include "contact-list.h"
 #include "presence.h"
 #include "aliasing.h"
 #include "avatar.h"
+#include "channel.h"
 
 #include <string.h>
 #include <time.h>
@@ -147,36 +147,22 @@ static void _iface_create_handle_repos(TpBaseConnection *self,
 
 
 
-static GPtrArray *_iface_create_channel_managers(TpBaseConnection *base) {
+static GPtrArray *_iface_create_channel_managers(TpBaseConnection *base) 
+{
 	LwqqConnection *self = LWQQ_CONNECTION (base);
 	LwqqConnectionPrivate *priv = self->priv;
 	GPtrArray *managers = g_ptr_array_sized_new(1);
 	GObject *manager;
 
-	manager = g_object_new(LWQQ_TYPE_IM_MANAGER, "connection", self, NULL);
+	manager = g_object_new(LWQQ_CHANNEL_TYPE, "connection", self, NULL);
 	g_ptr_array_add(managers, manager);
-
-	/*
-	manager = g_object_new(LWQQ_TYPE_MUC_MANAGER, "connection", self, NULL);
-	g_ptr_array_add(managers, manager);
-	*/
 
    priv->password_manager = tp_simple_password_manager_new(base);
    g_ptr_array_add(managers, priv->password_manager);
+
    self->contact_list =
       LWQQ_CONTACT_LIST(g_object_new(LWQQ_TYPE_CONTACT_LIST,"connection",self,NULL));
    g_ptr_array_add(managers, self->contact_list);
-
-
-	/*
-	manager = g_object_new(IDLE_TYPE_ROOMLIST_MANAGER, "connection", self, NULL);
-	g_ptr_array_add(managers, manager);
-
-	priv->tls_manager = g_object_new (IDLE_TYPE_SERVER_TLS_MANAGER,
-		"connection", self,
-                NULL);
-	g_ptr_array_add(managers, priv->tls_manager);
-	*/
 
 	return managers;
 }
