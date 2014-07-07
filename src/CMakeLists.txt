@@ -10,6 +10,7 @@ set(SRC
     aliasing.c
     avatar.c
     channel.c
+    channel-manager.c
     )
 
 include_directories(

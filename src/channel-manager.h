@@ -1,6 +1,6 @@
 #ifndef _LWQQ_CHANNEL_MANAGER_H_
 #define _LWQQ_CHANNEL_MANAGER_H_
-#include <gobject/gobject.h>
+#include <glib-object.h>
 G_BEGIN_DECLS
 
 typedef struct _LwqqChannelManagerPrivate LwqqChannelManagerPrivate;
