@@ -26,7 +26,7 @@
 #include "presence.h"
 #include "aliasing.h"
 #include "avatar.h"
-#include "channel.h"
+#include "channel-manager.h"
 
 #include <string.h>
 #include <time.h>
@@ -154,7 +154,7 @@ static GPtrArray *_iface_create_channel_managers(TpBaseConnection *base)
 	GPtrArray *managers = g_ptr_array_sized_new(1);
 	GObject *manager;
 
-	manager = g_object_new(LWQQ_CHANNEL_TYPE, "connection", self, NULL);
+	manager = g_object_new(LWQQ_CHANNEL_MANAGER_TYPE, "connection", self, NULL);
 	g_ptr_array_add(managers, manager);
 
    priv->password_manager = tp_simple_password_manager_new(base);
@@ -574,4 +574,11 @@ lwqq_connection_handle_inspect (LwqqConnection *conn,
         tp_base_connection_get_handles (base_conn, handle_type);
     g_assert (tp_handle_is_valid (handle_repo, handle, NULL));
     return tp_handle_inspect (handle_repo, handle);
+}
+
+
+LwqqBuddy* lwqq_find_buddy_by_handle(LwqqConnection* conn, TpHandle h)
+{
+   const char* qq = tp_handle_inspect(conn->priv->contact_repo, h);
+   return lwqq_buddy_find_buddy_by_qqnumber(conn->lc, qq);
 }

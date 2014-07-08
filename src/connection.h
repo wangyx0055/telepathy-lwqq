@@ -83,5 +83,6 @@ const gchar * const *lwqq_connection_get_implemented_interfaces (void);
 const gchar * lwqq_connection_handle_inspect (LwqqConnection *conn,
         TpHandleType handle_type, TpHandle handle);
 LwdbUserDB* lwqq_connection_get_db(LwqqConnection* conn);
+LwqqBuddy* lwqq_find_buddy_by_handle(LwqqConnection* conn, TpHandle h);
 
 #endif /* #ifndef __LWQQ_CONNECTION_H__*/
