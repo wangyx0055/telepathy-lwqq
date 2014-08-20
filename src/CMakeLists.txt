@@ -4,7 +4,6 @@ set(SRC
     connection-manager.c 
     contact-list.c
     protocol.c 
-    im-manager.c
     captcha.c
     presence.c
     aliasing.c

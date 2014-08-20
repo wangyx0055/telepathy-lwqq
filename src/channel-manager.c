@@ -110,7 +110,24 @@ set_property (GObject *object,
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
     }
 }
-static void
+
+   static void
+get_property (GObject *object,
+      guint property_id,
+      GValue *value,
+      GParamSpec *pspec)
+{
+   LwqqChannelManager *self = LWQQ_CHANNEL_MANAGER(object);
+   switch (property_id)
+   {
+      case PROP_CONNECTION:
+         g_value_set_object (value, self->priv->conn);
+         break;
+      default:
+         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
+   }
+}
+   static void
 lwqq_channel_manager_class_init (LwqqChannelManagerClass *self_class)
 {
    GObjectClass *object_class = G_OBJECT_CLASS (self_class);
@@ -118,6 +135,7 @@ lwqq_channel_manager_class_init (LwqqChannelManagerClass *self_class)
    g_type_class_add_private (self_class, sizeof (LwqqChannelManagerPrivate));
    object_class->dispose = (void (*) (GObject *object)) lwqq_channel_manager_dispose;
    object_class->set_property = set_property;
+   object_class->get_property = get_property;
 
    GParamSpec* param_spec = 
       g_param_spec_object ("connection", "Connection object",
