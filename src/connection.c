@@ -172,10 +172,10 @@ static void _iface_shut_down(TpBaseConnection *base) {
 #if 0
 	IdleConnection *self = IDLE_CONNECTION (base);
 	IdleConnectionPrivate *priv = self->priv;
-
+TATUS_ONLINE, 
 	if (priv->quitting)
 		return;
-
+TATUS_ONLINE, 
 	/* we never got around to actually creating the connection
 	 * iface object because we were still trying to connect, so
 	 * don't try to send any traffic down it */
@@ -372,7 +372,7 @@ static gboolean _iface_start_connecting(TpBaseConnection *self, GError **error) 
    if(last_hash) lwqq_hash_set_beg(lc, last_hash);
    
 
-   lwqq_login(lc, LWQQ_STATUS_ONLINE, NULL);
+   lwqq_login(lc, LWQQ_STATUS_ONLINE);
 	conn->lc = lc;
    conn->priv->db = db;
 	return TRUE;

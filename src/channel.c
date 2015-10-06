@@ -50,7 +50,7 @@ send_message (GObject *object,
     const GHashTable *input = tp_message_peek (message, 1);
     const gchar *send_message = tp_asv_get_string (input, "content");
     LwqqBuddy* buddy = lwqq_find_buddy_by_handle(conn, to);
-    lwqq_msg_send_simple(lc, LWQQ_MS_BUDDY_MSG, buddy->uin, send_message);
+    lwqq_msg_send_text(lc, LWQQ_MS_BUDDY_MSG, buddy->uin, send_message);
 
 finally:
     /* "OK, we've sent the message" (after calling this, message must not be
